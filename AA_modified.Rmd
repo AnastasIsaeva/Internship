@@ -1,0 +1,1025 @@
+---
+title: "Lymphocytes"
+author: "Anastasia Isaeva"
+date: "2025-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(gtsummary)
+library(GGally)
+
+```
+
+## Чтение данных
+
+```{r}
+original_data_1 <- read_excel("АА.xlsx", sheet = 1)
+original_data_2 <- read_excel("АА.xlsx", sheet = 2)
+original_data_all <- original_data_1 %>% 
+  left_join(original_data_2, by = "ID")
+
+```
+
+## Преобразование данных
+
+1) Заполним колонки `Частичный ответ на 120 (до 127) день` и `Полный ответ на 120 день (до 127)` руководствуясь правилом:
+ "1" - если в соответствующей колонке (`Частичный ответ` или `Полный ответ`) стоит "1" И прошло времени ≤ 127 дней от начала АТГ,
+ "0" - в противоположном случае
+2) Заменим "Нетданных" в Дате на NA
+3) Присвоим данным подходящий формат
+
+### Для анализа ответов на терапию без учета лейкоцитов
+
+```{r}
+
+mutated_data <- original_data_1 %>% 
+  mutate(`Частичный ответ на 120 (до 127) день` = case_when(
+    `Частичный ответ` == 1 &
+    as.numeric(`Дата частичного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
+    TRUE ~ 0
+  )) %>% 
+  mutate(`Полный ответ на 120 день (до 127)` = case_when(
+    `Полный ответ` == 1 &
+    as.numeric(`Дата полного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
+    TRUE ~ 0
+  )) %>% 
+  mutate(`Пол` = as.factor(`Пол`),
+         `Степень тяжести` = as.factor(`Степень тяжести`),
+         `Ветвь рандомизации` = as.factor(`Ветвь рандомизации`),
+         `Частичный ответ` = as.factor(`Частичный ответ`),
+         `Частичный ответ на 120 (до 127) день` = as.factor(`Частичный ответ на 120 (до 127) день`),
+         `Полный ответ` = as.factor(`Полный ответ`),
+         `Полный ответ на 120 день (до 127)` = as.factor(`Полный ответ на 120 день (до 127)`),
+         )
+
+```
+
+### Для анализа ответов на терапию с учетом лейкоцитов
+
+```{r}
+
+mutated_data_all <- original_data_all %>% 
+  mutate(`Частичный ответ на 120 (до 127) день` = case_when(
+    `Частичный ответ` == 1 &
+    as.numeric(`Дата частичного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
+    TRUE ~ 0
+  )) %>% 
+  mutate(`Полный ответ на 120 день (до 127)` = case_when(
+    `Полный ответ` == 1 &
+    as.numeric(`Дата полного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
+    TRUE ~ 0
+  )) %>% 
+  mutate(Дата = case_when(
+    Дата == "Нет данных" ~ NA,
+    TRUE ~ Дата
+  )) %>% 
+  mutate(`Пол` = as.factor(`Пол`),
+         `Степень тяжести` = as.factor(`Степень тяжести`),
+         `Ветвь рандомизации` = as.factor(`Ветвь рандомизации`),
+         `Частичный ответ` = as.factor(`Частичный ответ`),
+         `Частичный ответ на 120 (до 127) день` = as.factor(`Частичный ответ на 120 (до 127) день`),
+         `Полный ответ` = as.factor(`Полный ответ`),
+         `Полный ответ на 120 день (до 127)` = as.factor(`Полный ответ на 120 день (до 127)`),
+          Визит = as.factor(Визит),
+         Дата = as.POSIXct(as.numeric(Дата) * 86400, origin = "1899-12-30", tz = "UTC"),
+         `Лейкоциты (WBC), 10^9/л` = as.numeric(`Лейкоциты (WBC), 10^9/л`),
+         `Нейтрофилы (NEU), 10^9/л` = as.numeric(`Нейтрофилы (NEU), 10^9/л`))
+
+```
+
+
+## Расчет статистики хи2 для частичного и полного ответов без учета лимфоцитов
+
+### Все пациенты
+
+#### Вариант 1 
+
+```{r}
+
+mutated_data %>% 
+  select(`Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`,
+         `Ветвь рандомизации`) %>% 
+  tbl_summary(by = `Ветвь рандомизации`) %>% 
+  add_p()
+
+```
+
+
+#### Вариант 2
+
+```{r}
+mutated_data %>%
+  tbl_summary(
+    by = `Ветвь рандомизации`,
+    include = c(`Полный ответ на 120 день (до 127)`, `Частичный ответ на 120 (до 127) день`),
+    missing = "no"
+  ) %>%
+  add_p() %>%
+  bold_labels()
+
+```
+
+#### Вариант 3 
+
+Полный ответ
+```{r}
+
+mutated_data %>% 
+  tbl_cross(row = `Полный ответ на 120 день (до 127)`, 
+            col =  `Ветвь рандомизации`) %>% 
+  add_p() %>% 
+  bold_labels()
+
+```
+
+Частичный ответ
+
+```{r}
+
+mutated_data %>% 
+  tbl_cross(row = `Частичный ответ на 120 (до 127) день`, 
+            col =  `Ветвь рандомизации`) %>% 
+  add_p() %>% 
+  bold_labels()
+
+```
+
+
+### С разделением на степени тяжести
+
+```{r}
+
+mutated_data %>% 
+  select(`Степень тяжести`, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Степень тяжести`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = `Ветвь рандомизации`, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+
+## Хи2 тест и таблицы сопряженности
+
+### Данные в длинном формате
+
+```{r}
+
+long_data <- mutated_data %>% 
+  subset(select = c(ID, `Степень тяжести`, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`, `Полный ответ на 120 день (до 127)`)) %>% 
+  pivot_longer(!c(ID, `Степень тяжести`, `Ветвь рандомизации`)) %>% 
+  mutate(Response = recode_factor(name,
+                              "Частичный ответ на 120 (до 127) день" = "OR",
+                              "Полный ответ на 120 день (до 127)" = "CR")) %>% 
+  mutate(Degree = recode_factor(`Степень тяжести`,
+                                "Сверхтяжёлая" = "Very severe",
+                                "Тяжёлая" = "Severe")) %>% 
+  mutate(Therapy = recode_factor(`Ветвь рандомизации`,
+         "Стандартная ИСТ" = "IST",
+         "Элтромбопаг" = "ELTR + IST")) %>% 
+  rename(Type = value) %>% 
+  select(-c(name, `Степень тяжести`, `Ветвь рандомизации`))
+  
+head(long_data) 
+
+```
+
+### Хи2 для всех пациентов
+
+#### OR
+```{r}
+
+# Таблица сопряженности
+
+contingency_table_OR_all <- long_data %>% 
+  filter(Response == "OR") %>% 
+  with(table(Therapy, Type)) 
+
+contingency_table_OR_all
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_all, correct = FALSE)
+
+```
+
+#### CR
+
+```{r}
+# Таблица сопряженности
+
+contingency_table_CR_all <- long_data %>% 
+  filter(Response == "CR") %>% 
+  with(table(Therapy, Type)) 
+
+contingency_table_CR_all
+
+# Хи2 тест
+
+chisq.test(contingency_table_CR_all, correct = FALSE)
+
+```
+### Хи2 для пациентов по степени тяжести
+
+#### OR: Severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_OR_Severe <- long_data %>% 
+  filter(Response == "OR",
+         Degree == "Severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_OR_Severe
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_Severe, correct = FALSE)
+
+```
+
+#### CR: Severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_CR_Severe <- long_data %>% 
+  filter(Response == "CR",
+         Degree == "Severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_CR_Severe
+
+# Хи2 тест
+
+chisq.test(contingency_table_CR_Severe, correct = FALSE)
+
+```
+
+#### OR: Very severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_OR_VerySevere <- long_data %>% 
+  filter(Response == "OR",
+         Degree == "Very severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_OR_VerySevere
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_Severe, correct = FALSE)
+
+```
+
+#### CR: Very severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_CR_VerySevere <- long_data %>% 
+  filter(Response == "CR",
+         Degree == "Very severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_CR_VerySevere
+
+# Хи2 тест
+
+chisq.test(contingency_table_CR_Severe, correct = FALSE)
+
+```
+## График соотношения ответчиков без разделения на степень тяжести заболевания
+
+```{r}
+# Данные
+data_summary <- long_data %>%
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "All patients",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+
+## График соотношения ответчиков с разделением на степень тяжести заболевания
+
+```{r}
+# Данные
+data_summary_Severe <- long_data %>%
+  filter(Degree == "Severe") %>% 
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary_Severe, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "Severe anemia",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+## График соотношения ответчиков с разделением на степень тяжести заболевания
+
+```{r}
+# Данные
+data_summary_VerySevere <- long_data %>%
+  filter(Degree == "Very severe") %>% 
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary_VerySevere, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "Very severe anemia",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+
+# Распределение лейкоцитов, нейтрофилов и %-го содержания нейтрофилов в лейкоцитах в зависимости от визита
+
+## Создаем новую переменную - Процентное содержание нейтрофилов от лейкоцитов
+
+```{r}
+mutated_data_all <- mutated_data_all %>% 
+  mutate(`Процентное содержание нейтрофилов от лейкоцитов, %` = round(`Нейтрофилы (NEU), 10^9/л`/`Лейкоциты (WBC), 10^9/л`*100, 2))
+
+```
+
+## Смотрим на распределение лейкоцитов и нейтрофилов в зависимости от визита, корреляцию и линейные зависимости
+
+```{r, fig.height=10, fig.width=10}
+ggpairs(mutated_data_all,                
+        columns = c(
+                    "Лейкоциты (WBC), 10^9/л",
+                    "Нейтрофилы (NEU), 10^9/л",
+                    "Процентное содержание нейтрофилов от лейкоцитов, %",
+                    "Частичный ответ на 120 (до 127) день",
+                    "Полный ответ на 120 день (до 127)"),       
+        aes(color = Визит,  
+            alpha = 0.5))     
+
+```
+
+## Проведем логарифмирование 
+
+Поскольку распеделение нейтрофилов и лейкоцитов логнормальное, необходимо провести логарифмирование для того, чтобы привести их к нормальному распределению,  и затем определять выбросы.
+
+### Вариант 1
+Сначала провести логарифмирование, затем построить график
+
+```{r, fig.width=10}
+
+mutated_data_all %>%
+  mutate(
+    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
+    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
+    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
+  ) %>%
+  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value, fill = Визит)) +
+  geom_density(alpha = 0.4) +
+  annotation_logticks(sides = "b") +
+  facet_wrap(~ variable) +  
+  labs(
+    x = "Log10 Values",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+```
+
+### Вариант 2
+Построить график с логарифмированием
+
+```{r, fig.width=10}
+mutated_data_all %>%
+  mutate(
+    TenWBC = `Лейкоциты (WBC), 10^9/л`,
+    TenNEU = `Нейтрофилы (NEU), 10^9/л`,
+    TenPercentNEU = `Процентное содержание нейтрофилов от лейкоцитов, %`
+  ) %>%
+  pivot_longer(cols = starts_with("Ten"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value, fill = Визит)) +
+  geom_density(alpha = 0.4) +
+  scale_x_log10() +
+  annotation_logticks(sides = "b") +
+  facet_wrap(~ variable) +  
+  labs(
+    x = "Log10 Values",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+```
+
+## Исключим выбросы 
+Выбросы - значения, которые выходят за 1.5 межквартильных размаха
+
+```{r}
+
+mutated_data_all <- mutated_data_all %>%
+  mutate(
+    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
+    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
+    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
+  )
+
+# Функция для исключения выбросов по IQR
+remove_outliers_iqr <- function(data, column) {
+  Q1 <- quantile(data[[column]], 0.25, na.rm = TRUE)
+  Q3 <- quantile(data[[column]], 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  data %>% filter(between(data[[column]], lower_bound, upper_bound))
+}
+
+
+mutated_data_all_wooutliers <- mutated_data_all %>%
+  remove_outliers_iqr("log10WBC") %>%
+  remove_outliers_iqr("log10NEU") %>%
+  remove_outliers_iqr("log10PercentNEU")
+
+```
+
+## Визуализируем
+
+```{r, fig.width=10}
+# С выбросами
+mutated_data_all %>%
+  mutate(
+    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
+    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
+    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
+  ) %>%
+  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value, fill = Визит)) +
+  geom_density(alpha = 0.4) +
+  annotation_logticks(sides = "b") +
+  facet_wrap(~ variable) +  
+  labs(
+    x = "Log10 Values",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Без выбросов
+mutated_data_all_wooutliers %>%
+  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value, fill = Визит)) +
+  geom_density(alpha = 0.4) +
+  annotation_logticks(sides = "b") +
+  facet_wrap(~ variable) +  
+  labs(
+    x = "Log10 Values",
+    y = "Density"
+  ) +
+  theme_minimal()
+  
+```
+
+## Проведем категоризацию по лейкоцитам, нейтрофилам и процентрому содержанию нейтрофилов
+
+### Разделение по медиане на 2 категории
+
+```{r}
+
+mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers %>% 
+  # разделение на 2 категории
+  mutate(
+    log10WBC_mean = case_when(
+      log10WBC < mean(log10WBC) ~ "Low",
+      TRUE ~ "Hight"
+    ),
+    
+    log10NEU_mean = case_when(
+      log10NEU < mean(log10NEU) ~ "Low",
+      TRUE ~ "Hight"
+    ),
+    
+    log10PercentNEU_mean = case_when(
+      log10PercentNEU < mean(log10PercentNEU) ~ "Low",
+      TRUE ~ "Hight"
+    )
+    
+  ) %>% 
+  mutate(log10WBC_mean = as.factor(log10WBC_mean),
+         log10NEU_mean = as.factor(log10NEU_mean),
+         log10PercentNEU_mean = as.factor(log10PercentNEU_mean))
+
+
+
+```
+
+### Разделение по квантилям распределения на 3 категории (0.25 и 0.75)
+
+```{r}
+# Функция для разделения на категории по квантилям
+split_by_quantiles <- function(x, n_categories = 3) {
+  probs <- seq(0, 1, length.out = n_categories + 1)  
+  quantiles <- quantile(x, probs = probs, na.rm = TRUE)  
+  cut(x, breaks = quantiles, include.lowest = TRUE, labels = c("Low", "Medium", "Hight"))
+}
+
+
+mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers_cat %>%
+  mutate(across(c(log10WBC, log10NEU, log10PercentNEU), ~ split_by_quantiles(.x, n_categories = 3), .names = "{col}_quantiles"))
+
+```
+
+## Расчет статистики хи2 для частичного и полного ответов c учетом лимфоцитов
+
+### Данные в длинном формате
+
+```{r}
+
+long_data_all <- mutated_data_all_wooutliers_cat %>% 
+  subset(select = c(ID, `Степень тяжести`, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`, 
+         `Полный ответ на 120 день (до 127)`, 
+         Визит, 
+         log10WBC_mean,
+         log10NEU_mean,
+         log10PercentNEU_mean,
+         log10WBC_quantiles,
+         log10NEU_quantiles,
+         log10PercentNEU_quantiles)) %>% 
+  pivot_longer(!c(ID, 
+                  `Степень тяжести`,
+                  `Ветвь рандомизации`, 
+                  Визит,
+                  log10WBC_mean,
+                  log10NEU_mean,
+                  log10PercentNEU_mean,
+                  log10WBC_quantiles,
+                  log10NEU_quantiles,
+                  log10PercentNEU_quantiles
+                  )) %>% 
+  mutate(Response = recode_factor(name,
+                              "Частичный ответ на 120 (до 127) день" = "OR",
+                              "Полный ответ на 120 день (до 127)" = "CR")) %>% 
+  mutate(Degree = recode_factor(`Степень тяжести`,
+                                "Сверхтяжёлая" = "Very severe",
+                                "Тяжёлая" = "Severe")) %>% 
+  mutate(Therapy = recode_factor(`Ветвь рандомизации`,
+         "Стандартная ИСТ" = "IST",
+         "Элтромбопаг" = "ELTR + IST")) %>% 
+  mutate(Visit = recode_factor(Визит,
+                                "Инициально (скрининг)" = "Screening",
+                                "1 день 1 курса АТГ" = "1 day",
+                                "1 нед" = "1 week",
+                                "2 нед" = "2 week")) %>% 
+  rename(Type = value) %>% 
+  select(ID, Degree, Therapy, Response, Type, Visit, 
+         log10WBC_mean, log10NEU_mean, log10PercentNEU_mean, log10WBC_quantiles, log10NEU_quantiles, log10PercentNEU_quantiles)
+  
+head(long_data_all) 
+
+```
+
+### Все пациенты
+
+#### По процентному соотношению лимфоцитов - деление по медиане
+
+Инициально (скрининг)
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "Инициально (скрининг)") %>% 
+  select(log10PercentNEU_mean, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_mean, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+Альтернативное представление результатов (мне кажется не очень верным)
+Инициально (скрининг)
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "Инициально (скрининг)") %>% 
+  select(log10PercentNEU_mean, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = log10PercentNEU_mean,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = `Ветвь рандомизации`, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+
+
+1 день 1 курса АТГ
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "1 день 1 курса АТГ") %>% 
+  select(log10PercentNEU_mean, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_mean, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+
+
+1 неделя
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "1 нед") %>% 
+  select(log10PercentNEU_mean, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_mean, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+
+2 неделя
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "2 нед") %>% 
+  select(log10PercentNEU_mean, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_mean, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+
+
+#### По процентному соотношению лимфоцитов - деление по квантилям
+
+Инициально (скрининг)
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "Инициально (скрининг)") %>% 
+  select(log10PercentNEU_quantiles, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_quantiles, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+1 день 1 курса АТГ
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "1 день 1 курса АТГ") %>% 
+  select(log10PercentNEU_quantiles, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_quantiles, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+1 неделя
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "1 нед") %>% 
+  select(log10PercentNEU_quantiles, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_quantiles, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+2 неделя
+```{r}
+
+mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "2 нед") %>% 
+  select(log10PercentNEU_quantiles, 
+         `Ветвь рандомизации`, 
+         `Частичный ответ на 120 (до 127) день`,
+         `Полный ответ на 120 день (до 127)`) %>% 
+  tbl_strata(
+    strata = `Ветвь рандомизации`,
+    .tbl_fun =
+      ~ .x %>% 
+        tbl_summary(by = log10PercentNEU_quantiles, 
+                    missing = "no") %>% 
+        add_p(), 
+    .header = "**{strata}**, N = {n}"
+  )
+
+```
+
+## График соотношения ответчиков с разделением по процентному содержанию нейтрофилов на 2 неделю
+
+Низкий уровень нейтрофилов
+
+```{r}
+# Данные
+data_summary_long_data_all <- long_data_all %>%
+  filter(Visit == "2 week",
+    log10PercentNEU_quantiles == "Low") %>% 
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "Low precentage of neutrophils",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+
+Средний уровень нейтрофилов
+
+```{r}
+# Данные
+data_summary_long_data_all <- long_data_all %>%
+  filter(Visit == "2 week",
+    log10PercentNEU_quantiles == "Medium") %>% 
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "Medium precentage of neutrophils",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+
+Высокий уровень нейтрофилов
+
+```{r}
+# Данные
+data_summary_long_data_all <- long_data_all %>%
+  filter(Visit == "2 week",
+    log10PercentNEU_quantiles == "Hight") %>% 
+  group_by(Therapy, Response) %>%
+  summarise(
+    Percent = mean(Type == 1, na.rm = TRUE) * 100)
+
+# График
+ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  labs(
+    title = "Hight precentage of neutrophils",
+    x = "Therapy", 
+    y = NULL, 
+    fill = "Type"
+  ) +
+  geom_text(
+    aes(label = paste0(round(Percent), "%")),  
+    position = position_dodge(width = 0.9),  
+    vjust = -0.5, 
+    size = 4  
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  theme(axis.text.x = element_text( hjust = 1))
+
+```
+
+
+# Логистическая регрессия 
+
+```{r}
+
+mutated_data_all_wooutliers_cat_2weeks <- mutated_data_all_wooutliers_cat %>% 
+  filter(Визит == "2 нед")
+
+model <- glm(`Частичный ответ на 120 (до 127) день` ~ log10PercentNEU_quantiles + `Ветвь рандомизации`, data = mutated_data_all_wooutliers_cat_2weeks, family = binomial)
+summary(model)
+plot(model)
+
+```
+
+
+
+
+
+# Заметки
+
+## Варианты построения таблицы сопряженности
+
+```{r}
+
+# Фильтрация
+
+df_OR <- long_data %>% 
+  filter(Response == "OR") 
+
+#Первый вариант составления таблицы сопряженности
+table(df_OR$Therapy, df_OR$Type)
+
+
+#Второй вариант составления таблицы сопряженности
+xtabs(~ Therapy + Type, data = df_OR)
+
+#третий вариант составления таблицы сопряженности
+with(df_OR, table(Therapy, Type))  
+
+
+```
+
+
+
+
+
