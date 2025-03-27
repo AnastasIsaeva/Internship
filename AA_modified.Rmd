@@ -7,88 +7,108 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+
 library(tidyverse)
 library(readxl)
 library(dplyr)
 library(gtsummary)
 library(GGally)
 
-```
-
-## Чтение данных
-
-```{r}
-original_data_1 <- read_excel("АА.xlsx", sheet = 1)
-original_data_2 <- read_excel("АА.xlsx", sheet = 2)
-original_data_all <- original_data_1 %>% 
-  left_join(original_data_2, by = "ID")
+source("Lymphocytes_Data.R")
 
 ```
 
-## Преобразование данных
+## Функции
 
-1) Заполним колонки `Частичный ответ на 120 (до 127) день` и `Полный ответ на 120 день (до 127)` руководствуясь правилом:
- "1" - если в соответствующей колонке (`Частичный ответ` или `Полный ответ`) стоит "1" И прошло времени ≤ 127 дней от начала АТГ,
- "0" - в противоположном случае
-2) Заменим "Нетданных" в Дате на NA
-3) Присвоим данным подходящий формат
-
-### Для анализа ответов на терапию без учета лейкоцитов
+1) my_summary_table - для создания статистическиз таблиц 
+2) summary_plot - для создания графиков % ответчиков на терапию
 
 ```{r}
 
-mutated_data <- original_data_1 %>% 
-  mutate(`Частичный ответ на 120 (до 127) день` = case_when(
-    `Частичный ответ` == 1 &
-    as.numeric(`Дата частичного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
-    TRUE ~ 0
-  )) %>% 
-  mutate(`Полный ответ на 120 день (до 127)` = case_when(
-    `Полный ответ` == 1 &
-    as.numeric(`Дата полного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
-    TRUE ~ 0
-  )) %>% 
-  mutate(`Пол` = as.factor(`Пол`),
-         `Степень тяжести` = as.factor(`Степень тяжести`),
-         `Ветвь рандомизации` = as.factor(`Ветвь рандомизации`),
-         `Частичный ответ` = as.factor(`Частичный ответ`),
-         `Частичный ответ на 120 (до 127) день` = as.factor(`Частичный ответ на 120 (до 127) день`),
-         `Полный ответ` = as.factor(`Полный ответ`),
-         `Полный ответ на 120 день (до 127)` = as.factor(`Полный ответ на 120 день (до 127)`),
-         )
+# для создания статистическиз таблиц
+my_summary_table <- function(data, cols, group, strata = NULL) {
+  if (missing(strata) || is.null(strata)) {
+    data %>%
+      select(all_of(cols), all_of(group)) %>%
+      tbl_summary(by = all_of(group)) %>% 
+      add_p() %>%
+      bold_labels()
+  } else {
+    data %>%
+      select(all_of(cols), all_of(group), all_of(strata)) %>%
+      tbl_strata(
+        strata = all_of(strata),
+        .tbl_fun = ~ .x %>% 
+          tbl_summary(by = all_of(group), missing = "no") %>% 
+          add_p(), 
+        .header = "**{strata}**, N = {n}"
+      )
+  }
+}
+
+# для создания графиков % ответчиков на терапию
+summary_plot <- function(data, group, filter_var = NULL, category = NULL, 
+                         x, y, fill, title) {
+  
+
+  if (!is.null(filter_var)) {
+    data <- data %>% filter(.data[[filter_var]] == category)
+  }
+  
+
+  data_summary <- data %>%
+    group_by(across(all_of({{group}}))) %>%
+    summarise(
+      Percent = mean(.data[[y]] == 1, na.rm = TRUE) * 100,
+      .groups = "drop"
+    )
+  
+
+  ggplot(data_summary, aes(x = .data[[x]], y = Percent, fill = .data[[fill]])) +
+    geom_col(position = position_dodge(preserve = "single")) +
+    geom_text(
+      aes(label = paste0(round(Percent), "%")),
+      position = position_dodge(width = 0.9),
+      vjust = -0.5,
+      size = 3
+    ) +
+    labs(title = title) +
+    theme_classic()
+}
+
+
 
 ```
 
-### Для анализа ответов на терапию с учетом лейкоцитов
+
+## Данные
+
+1) original_data_all - исходные данные по 2 листам Excel (с информацией о лейкоцитах и нейтрофилах)
+
+2) mutated_data_all - преобразованные данные по 2 листам Excel (с информацией о лимфоцитах и нейтрофилах). Здесь переименованы столбцы на английские названия, добавлены переменные four_months_OR и  four_months_CR - для ответа на терапию за 4 месяца, Percent_NEU_to_WBC - для процентного соотношения нейтрофилов среди лейкоцитов
+
+3) mutated_data - аналогичные данные с mutated_data_all, только информация о лейкоцитах отсутствует
+
+## Исключение выбросов (ошибок)
+
+1) Если даты начала АТГ не соотносятся, исключаем строку с "1 day" - "1 день 1 курса АТГ" (?)
+2) Если дата 1 или 2 недели не находится в рамках 1/2 недели - удаляем данные этой недели. При этом, если в дате ОАК в дате "Нет данных", такие недели оставляем
 
 ```{r}
+# Фильтруем данные по условиям
+filtered_data_all <- mutated_data_all %>% 
+  filter(
+    !(Visit == "1 day" & ATG_Start_Date != Date),
+    (Visit != "1 week") | 
+    is.na(Date - ATG_Start_Date) | 
+    (as.numeric(difftime(Date, ATG_Start_Date, units = "days")) < 15),
+    (Visit != "2 week") | 
+    is.na(Date - ATG_Start_Date) | 
+    (as.numeric(difftime(Date, ATG_Start_Date, units = "days")) < 20)
+  )
 
-mutated_data_all <- original_data_all %>% 
-  mutate(`Частичный ответ на 120 (до 127) день` = case_when(
-    `Частичный ответ` == 1 &
-    as.numeric(`Дата частичного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
-    TRUE ~ 0
-  )) %>% 
-  mutate(`Полный ответ на 120 день (до 127)` = case_when(
-    `Полный ответ` == 1 &
-    as.numeric(`Дата полного ответа` - `Дата начала АТГ`) < 128 ~ 1, 
-    TRUE ~ 0
-  )) %>% 
-  mutate(Дата = case_when(
-    Дата == "Нет данных" ~ NA,
-    TRUE ~ Дата
-  )) %>% 
-  mutate(`Пол` = as.factor(`Пол`),
-         `Степень тяжести` = as.factor(`Степень тяжести`),
-         `Ветвь рандомизации` = as.factor(`Ветвь рандомизации`),
-         `Частичный ответ` = as.factor(`Частичный ответ`),
-         `Частичный ответ на 120 (до 127) день` = as.factor(`Частичный ответ на 120 (до 127) день`),
-         `Полный ответ` = as.factor(`Полный ответ`),
-         `Полный ответ на 120 день (до 127)` = as.factor(`Полный ответ на 120 день (до 127)`),
-          Визит = as.factor(Визит),
-         Дата = as.POSIXct(as.numeric(Дата) * 86400, origin = "1899-12-30", tz = "UTC"),
-         `Лейкоциты (WBC), 10^9/л` = as.numeric(`Лейкоциты (WBC), 10^9/л`),
-         `Нейтрофилы (NEU), 10^9/л` = as.numeric(`Нейтрофилы (NEU), 10^9/л`))
+# Смотрим исключенные по условиям строки
+excluded_data <- anti_join(mutated_data_all, filtered_data_all)
 
 ```
 
@@ -97,77 +117,26 @@ mutated_data_all <- original_data_all %>%
 
 ### Все пациенты
 
-#### Вариант 1 
 
 ```{r}
 
 mutated_data %>% 
-  select(`Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`,
-         `Ветвь рандомизации`) %>% 
-  tbl_summary(by = `Ветвь рандомизации`) %>% 
-  add_p()
+  my_summary_table(
+  cols = c("four_months_OR", "four_months_CR"),
+  group = "Therapy"
+  )
 
 ```
-
-
-#### Вариант 2
-
-```{r}
-mutated_data %>%
-  tbl_summary(
-    by = `Ветвь рандомизации`,
-    include = c(`Полный ответ на 120 день (до 127)`, `Частичный ответ на 120 (до 127) день`),
-    missing = "no"
-  ) %>%
-  add_p() %>%
-  bold_labels()
-
-```
-
-#### Вариант 3 
-
-Полный ответ
-```{r}
-
-mutated_data %>% 
-  tbl_cross(row = `Полный ответ на 120 день (до 127)`, 
-            col =  `Ветвь рандомизации`) %>% 
-  add_p() %>% 
-  bold_labels()
-
-```
-
-Частичный ответ
-
-```{r}
-
-mutated_data %>% 
-  tbl_cross(row = `Частичный ответ на 120 (до 127) день`, 
-            col =  `Ветвь рандомизации`) %>% 
-  add_p() %>% 
-  bold_labels()
-
-```
-
 
 ### С разделением на степени тяжести
 
 ```{r}
 
 mutated_data %>% 
-  select(`Степень тяжести`, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Степень тяжести`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = `Ветвь рандомизации`, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+  my_summary_table(
+    cols = c("Degree", "Therapy","four_months_OR", "four_months_CR"),
+    group = "Therapy",
+    strata = "Degree"
   )
 
 ```
@@ -180,23 +149,16 @@ mutated_data %>%
 ```{r}
 
 long_data <- mutated_data %>% 
-  subset(select = c(ID, `Степень тяжести`, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`, `Полный ответ на 120 день (до 127)`)) %>% 
-  pivot_longer(!c(ID, `Степень тяжести`, `Ветвь рандомизации`)) %>% 
-  mutate(Response = recode_factor(name,
-                              "Частичный ответ на 120 (до 127) день" = "OR",
-                              "Полный ответ на 120 день (до 127)" = "CR")) %>% 
-  mutate(Degree = recode_factor(`Степень тяжести`,
-                                "Сверхтяжёлая" = "Very severe",
-                                "Тяжёлая" = "Severe")) %>% 
-  mutate(Therapy = recode_factor(`Ветвь рандомизации`,
-         "Стандартная ИСТ" = "IST",
-         "Элтромбопаг" = "ELTR + IST")) %>% 
+  subset(select = c(ID, Degree, 
+         Therapy, 
+         four_months_OR, four_months_CR)) %>% 
+  pivot_longer(!c(ID, Degree, Therapy)) %>% 
+  mutate(Response = as.factor(name)) %>% 
   rename(Type = value) %>% 
-  select(-c(name, `Степень тяжести`, `Ветвь рандомизации`))
+  select(-c(name))
   
-head(long_data) 
+head(long_data)
+
 
 ```
 
@@ -208,7 +170,7 @@ head(long_data)
 # Таблица сопряженности
 
 contingency_table_OR_all <- long_data %>% 
-  filter(Response == "OR") %>% 
+  filter(Response == "four_months_OR") %>% 
   with(table(Therapy, Type)) 
 
 contingency_table_OR_all
@@ -225,7 +187,7 @@ chisq.test(contingency_table_OR_all, correct = FALSE)
 # Таблица сопряженности
 
 contingency_table_CR_all <- long_data %>% 
-  filter(Response == "CR") %>% 
+  filter(Response == "four_months_CR") %>% 
   with(table(Therapy, Type)) 
 
 contingency_table_CR_all
@@ -244,7 +206,7 @@ chisq.test(contingency_table_CR_all, correct = FALSE)
 # таблица сопряженности
 
 contingency_table_OR_Severe <- long_data %>% 
-  filter(Response == "OR",
+  filter(Response == "four_months_OR",
          Degree == "Severe") %>% 
   with(table(Therapy, Type))  
 
@@ -263,7 +225,7 @@ chisq.test(contingency_table_OR_Severe, correct = FALSE)
 # таблица сопряженности
 
 contingency_table_CR_Severe <- long_data %>% 
-  filter(Response == "CR",
+  filter(Response == "four_months_CR",
          Degree == "Severe") %>% 
   with(table(Therapy, Type))  
 
@@ -282,7 +244,7 @@ chisq.test(contingency_table_CR_Severe, correct = FALSE)
 # таблица сопряженности
 
 contingency_table_OR_VerySevere <- long_data %>% 
-  filter(Response == "OR",
+  filter(Response == "four_months_OR",
          Degree == "Very severe") %>% 
   with(table(Therapy, Type))  
 
@@ -290,7 +252,7 @@ contingency_table_OR_VerySevere
 
 # Хи2 тест
 
-chisq.test(contingency_table_OR_Severe, correct = FALSE)
+chisq.test(contingency_table_OR_VerySevere, correct = FALSE)
 
 ```
 
@@ -301,165 +263,104 @@ chisq.test(contingency_table_OR_Severe, correct = FALSE)
 # таблица сопряженности
 
 contingency_table_CR_VerySevere <- long_data %>% 
-  filter(Response == "CR",
+  filter(Response == "four_months_CR",
          Degree == "Very severe") %>% 
   with(table(Therapy, Type))  
 
 contingency_table_CR_VerySevere
 
-# Хи2 тест
+# Хи2 тест 
 
-chisq.test(contingency_table_CR_Severe, correct = FALSE)
+chisq.test(contingency_table_CR_VerySevere, correct = FALSE)
+
+# Точный тест Фишера 
+
+fisher.test(contingency_table_CR_VerySevere)
+
 
 ```
 ## График соотношения ответчиков без разделения на степень тяжести заболевания
 
 ```{r}
-# Данные
-data_summary <- long_data %>%
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
 
-# График
-ggplot(data_summary, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
-    title = "All patients",
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
     x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
+    title = "All patients"
+  )
 
 ```
 
 ## График соотношения ответчиков с разделением на степень тяжести заболевания
 
 ```{r}
-# Данные
-data_summary_Severe <- long_data %>%
-  filter(Degree == "Severe") %>% 
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
 
-# График
-ggplot(data_summary_Severe, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
+    x = "Therapy", 
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
     title = "Severe anemia",
-    x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    filter_var = "Degree",
+    category = "Severe"
+  )
+
 
 ```
 ## График соотношения ответчиков с разделением на степень тяжести заболевания
 
 ```{r}
-# Данные
-data_summary_VerySevere <- long_data %>%
-  filter(Degree == "Very severe") %>% 
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
 
-# График
-ggplot(data_summary_VerySevere, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
-    title = "Very severe anemia",
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
     x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
+    title = "Very severe anemia",
+    filter_var = "Degree",
+    category = "Very severe"
+  )
 
 ```
 
 # Распределение лейкоцитов, нейтрофилов и %-го содержания нейтрофилов в лейкоцитах в зависимости от визита
 
-## Создаем новую переменную - Процентное содержание нейтрофилов от лейкоцитов
-
-```{r}
-mutated_data_all <- mutated_data_all %>% 
-  mutate(`Процентное содержание нейтрофилов от лейкоцитов, %` = round(`Нейтрофилы (NEU), 10^9/л`/`Лейкоциты (WBC), 10^9/л`*100, 2))
-
-```
-
 ## Смотрим на распределение лейкоцитов и нейтрофилов в зависимости от визита, корреляцию и линейные зависимости
 
 ```{r, fig.height=10, fig.width=10}
-ggpairs(mutated_data_all,                
+ggpairs(filtered_data_all,                
         columns = c(
-                    "Лейкоциты (WBC), 10^9/л",
-                    "Нейтрофилы (NEU), 10^9/л",
-                    "Процентное содержание нейтрофилов от лейкоцитов, %",
-                    "Частичный ответ на 120 (до 127) день",
-                    "Полный ответ на 120 день (до 127)"),       
-        aes(color = Визит,  
+                    "WBC",
+                    "NEU",
+                    "Percent_NEU_to_WBC",
+                    "four_months_OR",
+                    "four_months_CR"),       
+        aes(color = Visit,  
             alpha = 0.5))     
 
 ```
 
 ## Проведем логарифмирование 
 
-Поскольку распеделение нейтрофилов и лейкоцитов логнормальное, необходимо провести логарифмирование для того, чтобы привести их к нормальному распределению,  и затем определять выбросы.
-
-### Вариант 1
-Сначала провести логарифмирование, затем построить график
+Поскольку распеделение нейтрофилов и лейкоцитов логнормальное, необходимо провести логарифмирование для того, чтобы привести их к нормальному распределению,  и затем определять выбросы и разделять данные на категории. Здесь мы не исключаем выбросы (ошибки в данных были исключены выше при получении датасета filtered_data_all).
 
 ```{r, fig.width=10}
 
-mutated_data_all %>%
+filtered_data_all_log <- filtered_data_all %>%
   mutate(
-    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
-    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
-    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
-  ) %>%
+    log10WBC = log(WBC, base = 10),
+    log10NEU = log(NEU, base = 10),
+    log10Percent_NEU_to_WBC = log(Percent_NEU_to_WBC, base = 10)
+  ) 
+
+filtered_data_all_log %>% 
   pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
-  ggplot(aes(x = value, fill = Визит)) +
+  ggplot(aes(x = value, fill = Visit)) +
   geom_density(alpha = 0.4) +
   annotation_logticks(sides = "b") +
   facet_wrap(~ variable) +  
@@ -472,125 +373,28 @@ mutated_data_all %>%
 
 ```
 
-### Вариант 2
-Построить график с логарифмированием
-
-```{r, fig.width=10}
-mutated_data_all %>%
-  mutate(
-    TenWBC = `Лейкоциты (WBC), 10^9/л`,
-    TenNEU = `Нейтрофилы (NEU), 10^9/л`,
-    TenPercentNEU = `Процентное содержание нейтрофилов от лейкоцитов, %`
-  ) %>%
-  pivot_longer(cols = starts_with("Ten"), names_to = "variable", values_to = "value") %>%
-  ggplot(aes(x = value, fill = Визит)) +
-  geom_density(alpha = 0.4) +
-  scale_x_log10() +
-  annotation_logticks(sides = "b") +
-  facet_wrap(~ variable) +  
-  labs(
-    x = "Log10 Values",
-    y = "Density"
-  ) +
-  theme_minimal()
-
-```
-
-## Исключим выбросы 
-Выбросы - значения, которые выходят за 1.5 межквартильных размаха
-
-```{r}
-
-mutated_data_all <- mutated_data_all %>%
-  mutate(
-    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
-    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
-    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
-  )
-
-# Функция для исключения выбросов по IQR
-remove_outliers_iqr <- function(data, column) {
-  Q1 <- quantile(data[[column]], 0.25, na.rm = TRUE)
-  Q3 <- quantile(data[[column]], 0.75, na.rm = TRUE)
-  IQR <- Q3 - Q1
-  lower_bound <- Q1 - 1.5 * IQR
-  upper_bound <- Q3 + 1.5 * IQR
-  data %>% filter(between(data[[column]], lower_bound, upper_bound))
-}
 
 
-mutated_data_all_wooutliers <- mutated_data_all %>%
-  remove_outliers_iqr("log10WBC") %>%
-  remove_outliers_iqr("log10NEU") %>%
-  remove_outliers_iqr("log10PercentNEU")
-
-```
-
-## Визуализируем
-
-```{r, fig.width=10}
-# С выбросами
-mutated_data_all %>%
-  mutate(
-    log10WBC = log(`Лейкоциты (WBC), 10^9/л`, base = 10),
-    log10NEU = log(`Нейтрофилы (NEU), 10^9/л`, base = 10),
-    log10PercentNEU = log(`Процентное содержание нейтрофилов от лейкоцитов, %`, base = 10)
-  ) %>%
-  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
-  ggplot(aes(x = value, fill = Визит)) +
-  geom_density(alpha = 0.4) +
-  annotation_logticks(sides = "b") +
-  facet_wrap(~ variable) +  
-  labs(
-    x = "Log10 Values",
-    y = "Density"
-  ) +
-  theme_minimal()
-
-# Без выбросов
-mutated_data_all_wooutliers %>%
-  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
-  ggplot(aes(x = value, fill = Визит)) +
-  geom_density(alpha = 0.4) +
-  annotation_logticks(sides = "b") +
-  facet_wrap(~ variable) +  
-  labs(
-    x = "Log10 Values",
-    y = "Density"
-  ) +
-  theme_minimal()
-  
-```
 
 ## Проведем категоризацию по лейкоцитам, нейтрофилам и процентрому содержанию нейтрофилов
 
-### Разделение по медиане на 2 категории
+### Разделение по среднему на 2 категории по медиане (меньше зависит от скошенности расперделения)
 
 ```{r}
 
-mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers %>% 
-  # разделение на 2 категории
-  mutate(
-    log10WBC_mean = case_when(
-      log10WBC < mean(log10WBC) ~ "Low",
-      TRUE ~ "Hight"
+filtered_data_all_log_cat <- filtered_data_all_log %>%
+  group_by(Visit) %>%
+  mutate(across(
+    .cols = c(log10WBC, log10NEU, log10Percent_NEU_to_WBC),
+    .fns = list(
+      median = ~factor(
+        if_else(.x < median(.x, na.rm = TRUE), "Low", "High"),
+        levels = c("Low", "High")
+      )
     ),
-    
-    log10NEU_mean = case_when(
-      log10NEU < mean(log10NEU) ~ "Low",
-      TRUE ~ "Hight"
-    ),
-    
-    log10PercentNEU_mean = case_when(
-      log10PercentNEU < mean(log10PercentNEU) ~ "Low",
-      TRUE ~ "Hight"
-    )
-    
-  ) %>% 
-  mutate(log10WBC_mean = as.factor(log10WBC_mean),
-         log10NEU_mean = as.factor(log10NEU_mean),
-         log10PercentNEU_mean = as.factor(log10PercentNEU_mean))
-
+    .names = "{.col}_median"
+  )) %>%
+  ungroup()
 
 
 ```
@@ -598,6 +402,7 @@ mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers %>%
 ### Разделение по квантилям распределения на 3 категории (0.25 и 0.75)
 
 ```{r}
+
 # Функция для разделения на категории по квантилям
 split_by_quantiles <- function(x, n_categories = 3) {
   probs <- seq(0, 1, length.out = n_categories + 1)  
@@ -606,8 +411,12 @@ split_by_quantiles <- function(x, n_categories = 3) {
 }
 
 
-mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers_cat %>%
-  mutate(across(c(log10WBC, log10NEU, log10PercentNEU), ~ split_by_quantiles(.x, n_categories = 3), .names = "{col}_quantiles"))
+filtered_data_all_log_cat <- filtered_data_all_log_cat %>% 
+  group_by(Visit) %>% 
+  mutate(across(c(log10WBC, log10NEU, log10Percent_NEU_to_WBC),
+                ~ split_by_quantiles(.x, n_categories = 3), 
+                .names = "{col}_quantiles")) %>%
+  ungroup()
 
 ```
 
@@ -617,116 +426,75 @@ mutated_data_all_wooutliers_cat <- mutated_data_all_wooutliers_cat %>%
 
 ```{r}
 
-long_data_all <- mutated_data_all_wooutliers_cat %>% 
-  subset(select = c(ID, `Степень тяжести`, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`, 
-         `Полный ответ на 120 день (до 127)`, 
-         Визит, 
-         log10WBC_mean,
-         log10NEU_mean,
-         log10PercentNEU_mean,
-         log10WBC_quantiles,
-         log10NEU_quantiles,
-         log10PercentNEU_quantiles)) %>% 
-  pivot_longer(!c(ID, 
-                  `Степень тяжести`,
-                  `Ветвь рандомизации`, 
-                  Визит,
-                  log10WBC_mean,
-                  log10NEU_mean,
-                  log10PercentNEU_mean,
-                  log10WBC_quantiles,
-                  log10NEU_quantiles,
-                  log10PercentNEU_quantiles
-                  )) %>% 
-  mutate(Response = recode_factor(name,
-                              "Частичный ответ на 120 (до 127) день" = "OR",
-                              "Полный ответ на 120 день (до 127)" = "CR")) %>% 
-  mutate(Degree = recode_factor(`Степень тяжести`,
-                                "Сверхтяжёлая" = "Very severe",
-                                "Тяжёлая" = "Severe")) %>% 
-  mutate(Therapy = recode_factor(`Ветвь рандомизации`,
-         "Стандартная ИСТ" = "IST",
-         "Элтромбопаг" = "ELTR + IST")) %>% 
-  mutate(Visit = recode_factor(Визит,
-                                "Инициально (скрининг)" = "Screening",
-                                "1 день 1 курса АТГ" = "1 day",
-                                "1 нед" = "1 week",
-                                "2 нед" = "2 week")) %>% 
-  rename(Type = value) %>% 
-  select(ID, Degree, Therapy, Response, Type, Visit, 
-         log10WBC_mean, log10NEU_mean, log10PercentNEU_mean, log10WBC_quantiles, log10NEU_quantiles, log10PercentNEU_quantiles)
-  
-head(long_data_all) 
+# Переменные для длинного формата
+long_vars <- c("ID", "Degree", "Therapy", "Visit", 
+               "log10WBC_median", "log10NEU_median", "log10Percent_NEU_to_WBC_median",
+               "log10WBC_quantiles", "log10NEU_quantiles", "log10Percent_NEU_to_WBC_quantiles")
+
+# Переменные не для длинного формата
+vars <- c("ID", "Degree", "Therapy", "Visit",
+             "log10WBC_median", "log10NEU_median", "log10Percent_NEU_to_WBC_median",
+             "log10WBC_quantiles", "log10NEU_quantiles", "log10Percent_NEU_to_WBC_quantiles")
+
+long_filtered_data_all_log_cat <- filtered_data_all_log_cat %>% 
+  select(all_of(long_vars), four_months_OR, four_months_CR) %>% 
+  pivot_longer(
+    cols = -all_of(vars),
+    names_to = "Response",
+    values_to = "Type"
+  ) %>% 
+  select(Response, Type, all_of(vars))
 
 ```
+
 
 ### Все пациенты
 
 #### По процентному соотношению лимфоцитов - деление по медиане
 
-Инициально (скрининг)
+Инициально (скрининг) - без стратификации по терапии
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "Инициально (скрининг)") %>% 
-  select(log10PercentNEU_mean, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_mean, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
-  )
-
-```
-Альтернативное представление результатов (мне кажется не очень верным)
-Инициально (скрининг)
-```{r}
-
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "Инициально (скрининг)") %>% 
-  select(log10PercentNEU_mean, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = log10PercentNEU_mean,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = `Ветвь рандомизации`, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
   )
 
 ```
 
+Инициально (скрининг) - со стратификацией по терапии
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "Therapy",
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = "Therapy"
+  )
+
+```
 
 
 1 день 1 курса АТГ
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "1 день 1 курса АТГ") %>% 
-  select(log10PercentNEU_mean, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_mean, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 day") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
   )
 
 ```
@@ -736,20 +504,14 @@ mutated_data_all_wooutliers_cat %>%
 1 неделя
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "1 нед") %>% 
-  select(log10PercentNEU_mean, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_mean, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
   )
 
 ```
@@ -758,20 +520,14 @@ mutated_data_all_wooutliers_cat %>%
 2 неделя
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "2 нед") %>% 
-  select(log10PercentNEU_mean, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_mean, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "2 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
   )
 
 ```
@@ -783,20 +539,14 @@ mutated_data_all_wooutliers_cat %>%
 Инициально (скрининг)
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "Инициально (скрининг)") %>% 
-  select(log10PercentNEU_quantiles, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_quantiles, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
   )
 
 ```
@@ -804,20 +554,14 @@ mutated_data_all_wooutliers_cat %>%
 1 день 1 курса АТГ
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "1 день 1 курса АТГ") %>% 
-  select(log10PercentNEU_quantiles, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_quantiles, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 day") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
   )
 
 ```
@@ -825,20 +569,14 @@ mutated_data_all_wooutliers_cat %>%
 1 неделя
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "1 нед") %>% 
-  select(log10PercentNEU_quantiles, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_quantiles, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
   )
 
 ```
@@ -846,134 +584,69 @@ mutated_data_all_wooutliers_cat %>%
 2 неделя
 ```{r}
 
-mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "2 нед") %>% 
-  select(log10PercentNEU_quantiles, 
-         `Ветвь рандомизации`, 
-         `Частичный ответ на 120 (до 127) день`,
-         `Полный ответ на 120 день (до 127)`) %>% 
-  tbl_strata(
-    strata = `Ветвь рандомизации`,
-    .tbl_fun =
-      ~ .x %>% 
-        tbl_summary(by = log10PercentNEU_quantiles, 
-                    missing = "no") %>% 
-        add_p(), 
-    .header = "**{strata}**, N = {n}"
+filtered_data_all_log_cat %>% 
+  filter(Visit == "2 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
   )
 
 ```
 
-## График соотношения ответчиков с разделением по процентному содержанию нейтрофилов на 2 неделю
+## График соотношения ответчиков с разделением по процентному содержанию нейтрофилов на 2 неделю (при разделении на 3 категории)
 
 Низкий уровень нейтрофилов
 
 ```{r}
-# Данные
-data_summary_long_data_all <- long_data_all %>%
-  filter(Visit == "2 week",
-    log10PercentNEU_quantiles == "Low") %>% 
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
 
-# График
-ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
-    title = "Low precentage of neutrophils",
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Low") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
     x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    y = "Type",
+    fill = "Response",
+    title = "Low level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
 
 ```
 
 Средний уровень нейтрофилов
 
 ```{r}
-# Данные
-data_summary_long_data_all <- long_data_all %>%
-  filter(Visit == "2 week",
-    log10PercentNEU_quantiles == "Medium") %>% 
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
-
-# График
-ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
-    title = "Medium precentage of neutrophils",
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Medium") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
     x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    y = "Type",
+    fill = "Response",
+    title = "Medium level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
 
 ```
 
 Высокий уровень нейтрофилов
 
 ```{r}
-# Данные
-data_summary_long_data_all <- long_data_all %>%
-  filter(Visit == "2 week",
-    log10PercentNEU_quantiles == "Hight") %>% 
-  group_by(Therapy, Response) %>%
-  summarise(
-    Percent = mean(Type == 1, na.rm = TRUE) * 100)
-
-# График
-ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response)) +
-  geom_bar(stat = "identity", position = "dodge") +  
-  labs(
-    title = "Hight precentage of neutrophils",
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Hight") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
     x = "Therapy", 
-    y = NULL, 
-    fill = "Type"
-  ) +
-  geom_text(
-    aes(label = paste0(round(Percent), "%")),  
-    position = position_dodge(width = 0.9),  
-    vjust = -0.5, 
-    size = 4  
-  ) +
-  theme_classic() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  theme(axis.text.x = element_text( hjust = 1))
+    y = "Type",
+    fill = "Response",
+    title = "Hight level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
 
 ```
 
@@ -982,39 +655,22 @@ ggplot(data_summary_long_data_all, aes(x = Therapy, y = Percent, fill = Response
 
 ```{r}
 
-mutated_data_all_wooutliers_cat_2weeks <- mutated_data_all_wooutliers_cat %>% 
-  filter(Визит == "2 нед")
+filtered_data_all_log_cat_two_weeks <- filtered_data_all_log_cat %>% 
+  filter(Visit == "2 week") %>% 
+  select(four_months_OR, log10Percent_NEU_to_WBC_quantiles, Therapy) 
 
-model <- glm(`Частичный ответ на 120 (до 127) день` ~ log10PercentNEU_quantiles + `Ветвь рандомизации`, data = mutated_data_all_wooutliers_cat_2weeks, family = binomial)
+model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles + Therapy, data = filtered_data_all_log_cat_two_weeks, family = binomial)
 summary(model)
-plot(model)
+#plot(model)
 
-```
+#glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles * Therapy, 
+#    family = binomial, data = filtered_data_all_log_cat_two_weeks)
 
-
-
-
-
-# Заметки
-
-## Варианты построения таблицы сопряженности
-
-```{r}
-
-# Фильтрация
-
-df_OR <- long_data %>% 
-  filter(Response == "OR") 
-
-#Первый вариант составления таблицы сопряженности
-table(df_OR$Therapy, df_OR$Type)
-
-
-#Второй вариант составления таблицы сопряженности
-xtabs(~ Therapy + Type, data = df_OR)
-
-#третий вариант составления таблицы сопряженности
-with(df_OR, table(Therapy, Type))  
+library(pROC)
+roc_curve <- roc(four_months_OR ~ predict(model, type = "response"), 
+                 data = model$model)
+plot(roc_curve, main = "ROC-кривая")
+auc(roc_curve)
 
 
 ```
