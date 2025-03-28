@@ -14,6 +14,14 @@ library(dplyr)
 library(gtsummary)
 library(GGally)
 
+# Логистическая регрессия
+
+library(car)
+library(broom)
+library(broom.helpers)
+library(forestmodel)
+library(ggResidpanel)
+
 source("Lymphocytes_Data.R")
 
 ```
@@ -663,17 +671,62 @@ model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles + Therapy, data 
 summary(model)
 #plot(model)
 
+
+# Проверка эффекта пересечения
 #glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles * Therapy, 
 #    family = binomial, data = filtered_data_all_log_cat_two_weeks)
 
-library(pROC)
-roc_curve <- roc(four_months_OR ~ predict(model, type = "response"), 
-                 data = model$model)
-plot(roc_curve, main = "ROC-кривая")
-auc(roc_curve)
+
 
 
 ```
+
+## Интерпретация модели
+
+### Коэффициенты, их SE, ДИ, тесты
+
+```{r}
+tbl_regression(model, exponentiate = TRUE)
+```
+
+## Форест-плот 
+
+```{r, fig.width=10}
+forest_model(model)
+
+# Чтобы в `broom::tidy` вывести ДИ Вальда:
+
+#dplyr::bind_cols(
+#    broom::tidy(model, exponentiate = TRUE, conf.int = FALSE),
+#    broom::confint_tidy(model, func = stats::confint.default)
+#  )
+```
+
+
+## Диагностика модели 
+
+```{r}
+# Специфичность и селективность модели
+
+#library(pROC)
+#roc_curve <- roc(four_months_OR ~ predict(model, type = "response"), 
+#                 data = model$model)
+#plot(roc_curve, main = "ROC-кривая")
+#auc(roc_curve)
+
+# Мультиколлинеарность
+# Если GVIF>5 мультиколлинеарность есть, если меньше - нет или слабая 
+car::vif(model)
+
+# Выбросы
+resid_panel(model, plots = c("lev", "cookd"))
+
+
+
+```
+
+
+
 
 
 
