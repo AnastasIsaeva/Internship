@@ -1,0 +1,64 @@
+---
+title: "Lymphocytes"
+author: "Anastasia Isaeva"
+date: "2025-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+
+source("Lymphocytes_Data.R")
+
+```
+
+
+
+## Данные
+
+1) original_data_all - исходные данные по 2 листам Excel (с информацией о лейкоцитах и нейтрофилах)
+
+2) mutated_data_all - преобразованные данные по 2 листам Excel (с информацией о лимфоцитах и нейтрофилах). Здесь переименованы столбцы на английские названия, добавлены переменные four_months_OR и  four_months_CR - для ответа на терапию за 4 месяца, Percent_NEU_to_WBC - для процентного соотношения нейтрофилов среди лейкоцитов
+
+3) mutated_data - аналогичные данные с mutated_data_all, только информация о лейкоцитах отсутствует
+
+4) filtered_data_all - данные без выбросов (ошибок):
+- Если даты начала АТГ не соотносятся (разница в датах превышает 5 дней), исключаем строку с "1 day" - "1 день 1 курса АТГ"
+- Если дата 1 или 2 недели не находится в рамках 1/2 недели (для 1 недели разница с 1 day не больше 15, для 2 недели - не больше 23) - удаляем данные этой недели. При этом, если в дате ОАК в дате "Нет данных", такие недели оставляем
+- Исключаем строки с WBC или NEU с NA
+- Заменяем 0 в WBC и NEU на минимальный показатель/2
+## Смотрим на исключенные из-за ошибок строки
+
+```{r}
+
+# Смотрим исключенные по условиям строки
+excluded_data <- anti_join(mutated_data_all, filtered_data_all)
+
+# Смотрим на разницу времени
+excluded_data %>% 
+  transmute(time = difftime(Date, ATG_Start_Date), Visit, ID)
+
+
+```
+
+## Репортируем все исключенные строки (мы исключили только строки а не пациента целиком). 
+
+
+```{r}
+
+excluded_data_report <- excluded_data %>% 
+  select(ID, Sex, Age, Degree, Visit, Date, WBC, NEU, ATG_Start_Date, OR, OR_Date, CR, CR_Date)
+
+excluded_data_report_all <- mutated_data_all %>% 
+  filter(ID %in% c(5, 7, 16, 29, 33, 46, 51)) %>% 
+  select(ID, Sex, Age, Degree, Visit, Date, WBC, NEU, ATG_Start_Date, OR, OR_Date, CR, CR_Date)
+
+#saveRDS(excluded_data_report, "Excluded_srtings")
+#saveRDS(excluded_data_report_all, "Patients")
+```
+
+

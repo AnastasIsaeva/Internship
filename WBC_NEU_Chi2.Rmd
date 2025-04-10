@@ -1,0 +1,472 @@
+---
+title: "WBC_NEU"
+author: "Anastasia Isaeva"
+date: "2025-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(gtsummary)
+library(GGally)
+
+# Логистическая регрессия
+
+library(car)
+library(broom)
+library(broom.helpers)
+library(forestmodel)
+library(ggResidpanel)
+
+source("Lymphocytes_Data.R")
+
+```
+
+## Функции
+
+1) my_summary_table - для создания статистическиз таблиц 
+2) summary_plot - для создания графиков % ответчиков на терапию
+
+```{r}
+
+# для создания статистическиз таблиц
+my_summary_table <- function(data, cols, group, strata = NULL) {
+  if (missing(strata) || is.null(strata)) {
+    data %>%
+      select(all_of(cols), all_of(group)) %>%
+      tbl_summary(by = all_of(group)) %>% 
+      add_p() %>%
+      bold_labels()
+  } else {
+    data %>%
+      select(all_of(cols), all_of(group), all_of(strata)) %>%
+      tbl_strata(
+        strata = all_of(strata),
+        .tbl_fun = ~ .x %>% 
+          tbl_summary(by = all_of(group), missing = "no") %>% 
+          add_p(), 
+        .header = "**{strata}**, N = {n}"
+      )
+  }
+}
+
+# для создания графиков % ответчиков на терапию
+summary_plot <- function(data, group, filter_var = NULL, category = NULL, 
+                         x, y, fill, title) {
+  
+
+  if (!is.null(filter_var)) {
+    data <- data %>% filter(.data[[filter_var]] == category)
+  }
+  
+
+  data_summary <- data %>%
+    group_by(across(all_of({{group}}))) %>%
+    summarise(
+      Percent = mean(.data[[y]] == 1, na.rm = TRUE) * 100,
+      .groups = "drop"
+    )
+  
+
+  ggplot(data_summary, aes(x = .data[[x]], y = Percent, fill = .data[[fill]])) +
+    geom_col(position = position_dodge(preserve = "single")) +
+    geom_text(
+      aes(label = paste0(round(Percent), "%")),
+      position = position_dodge(width = 0.9),
+      vjust = -0.5,
+      size = 3
+    ) +
+    labs(title = title) +
+    theme_classic()
+}
+
+
+
+```
+
+# Распределение лейкоцитов, нейтрофилов и %-го содержания нейтрофилов в лейкоцитах в зависимости от визита
+
+## Смотрим на распределение лейкоцитов и нейтрофилов в зависимости от визита, корреляцию и линейные зависимости
+
+```{r, fig.height=10, fig.width=10}
+ggpairs(filtered_data_all,                
+        columns = c(
+                    "WBC",
+                    "NEU",
+                    "Percent_NEU_to_WBC",
+                    "four_months_OR",
+                    "four_months_CR"),       
+        aes(color = Visit,  
+            alpha = 0.5))     
+
+```
+
+## Проведем логарифмирование 
+
+Поскольку распеделение нейтрофилов и лейкоцитов логнормальное, необходимо провести логарифмирование для того, чтобы привести их к нормальному распределению,  и затем определять выбросы и разделять данные на категории. Здесь мы не исключаем выбросы (ошибки в данных были исключены выше при получении датасета filtered_data_all).
+
+```{r, fig.width=10}
+
+filtered_data_all_log <- filtered_data_all %>%
+  mutate(
+    log10WBC = log(WBC, base = 10),
+    log10NEU = log(NEU, base = 10),
+    log10Percent_NEU_to_WBC = log(Percent_NEU_to_WBC, base = 10)
+  ) 
+
+filtered_data_all_log %>% 
+  pivot_longer(cols = starts_with("log"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value, fill = Visit)) +
+  geom_density(alpha = 0.4) +
+  annotation_logticks(sides = "b") +
+  facet_wrap(~ variable) +  
+  labs(
+    x = "Log10 Values",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+```
+
+## Проведем категоризацию по лейкоцитам, нейтрофилам и процентрому содержанию нейтрофилов
+
+### Разделение по среднему на 2 категории по медиане (меньше зависит от скошенности расперделения)
+
+```{r}
+
+filtered_data_all_log_cat <- filtered_data_all_log %>%
+  group_by(Visit) %>%
+  mutate(across(
+    .cols = c(log10WBC, log10NEU, log10Percent_NEU_to_WBC),
+    .fns = list(
+      median = ~factor(
+        if_else(.x < median(.x, na.rm = TRUE), "Low", "High"),
+        levels = c("Low", "High")
+      )
+    ),
+    .names = "{.col}_median"
+  )) %>%
+  ungroup()
+
+
+```
+
+### Разделение по квантилям распределения на 3 категории (0.25 и 0.75)
+
+```{r}
+
+# Функция для разделения на категории по квантилям
+split_by_quantiles <- function(x, n_categories = 3) {
+  probs <- seq(0, 1, length.out = n_categories + 1)  
+  quantiles <- quantile(x, probs = probs, na.rm = TRUE)  
+  cut(x, breaks = quantiles, include.lowest = TRUE, labels = c("Low", "Medium", "Hight"))
+}
+
+
+filtered_data_all_log_cat <- filtered_data_all_log_cat %>% 
+  group_by(Visit) %>% 
+  mutate(across(c(log10WBC, log10NEU, log10Percent_NEU_to_WBC),
+                ~ split_by_quantiles(.x, n_categories = 3), 
+                .names = "{col}_quantiles")) %>%
+  ungroup()
+
+```
+
+## Расчет статистики хи2 для частичного и полного ответов c учетом лимфоцитов
+
+### Данные в длинном формате
+
+```{r}
+
+# Переменные для длинного формата
+long_vars <- c("ID", "Degree", "Therapy", "Visit", 
+               "log10WBC_median", "log10NEU_median", "log10Percent_NEU_to_WBC_median",
+               "log10WBC_quantiles", "log10NEU_quantiles", "log10Percent_NEU_to_WBC_quantiles")
+
+# Переменные не для длинного формата
+vars <- c("ID", "Degree", "Therapy", "Visit",
+             "log10WBC_median", "log10NEU_median", "log10Percent_NEU_to_WBC_median",
+             "log10WBC_quantiles", "log10NEU_quantiles", "log10Percent_NEU_to_WBC_quantiles")
+
+long_filtered_data_all_log_cat <- filtered_data_all_log_cat %>% 
+  select(all_of(long_vars), four_months_OR, four_months_CR) %>% 
+  pivot_longer(
+    cols = -all_of(vars),
+    names_to = "Response",
+    values_to = "Type"
+  ) %>% 
+  select(Response, Type, all_of(vars))
+
+```
+
+
+### Все пациенты
+
+#### По процентному соотношению лимфоцитов - деление по медиане
+
+Инициально (скрининг) - без стратификации по терапии
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
+  )
+
+```
+
+Инициально (скрининг) - со стратификацией по терапии
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "Therapy",
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = "Therapy"
+  )
+
+```
+
+1 день 1 курса АТГ
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 day") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
+  )
+
+```
+
+1 неделя
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
+  )
+
+```
+
+2 неделя
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "2 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_median", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_median",
+    strata = NULL
+  )
+
+```
+
+#### По процентному соотношению лимфоцитов - деление по квантилям
+
+Инициально (скрининг)
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "Screening") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
+  )
+
+```
+
+
+1 день 1 курса АТГ
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 day") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
+  )
+
+```
+
+1 неделя
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "1 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
+  )
+
+```
+
+2 неделя
+```{r}
+
+filtered_data_all_log_cat %>% 
+  filter(Visit == "2 week") %>% 
+  my_summary_table(
+    cols = c("log10Percent_NEU_to_WBC_quantiles", 
+         "four_months_OR",
+         "four_months_CR"),
+    group = "log10Percent_NEU_to_WBC_quantiles",
+    strata = NULL
+  )
+
+```
+
+## График соотношения ответчиков с разделением по процентному содержанию нейтрофилов на 2 неделю (при разделении на 3 категории)
+
+Низкий уровень нейтрофилов
+
+```{r}
+
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Low") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
+    x = "Therapy", 
+    y = "Type",
+    fill = "Response",
+    title = "Low level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
+
+```
+
+Средний уровень нейтрофилов
+
+```{r}
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Medium") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
+    x = "Therapy", 
+    y = "Type",
+    fill = "Response",
+    title = "Medium level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
+
+```
+
+Высокий уровень нейтрофилов
+
+```{r}
+long_filtered_data_all_log_cat %>% 
+  filter(log10Percent_NEU_to_WBC_quantiles == "Hight") %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), 
+    x = "Therapy", 
+    y = "Type",
+    fill = "Response",
+    title = "Hight level of neutrophils at second week",
+    filter_var = "Visit",
+    category = "2 week"
+  )
+
+```
+
+
+
+
+
+```{r}
+
+filtered_data_all_log_cat_two_weeks <- filtered_data_all_log_cat %>% 
+  filter(Visit == "1 week") %>% 
+  mutate(Percent_NEU_to_WBC_10 = Percent_NEU_to_WBC/10) %>% 
+  select(four_months_OR, Percent_NEU_to_WBC_10, Therapy) 
+
+model <- glm(four_months_OR ~ Percent_NEU_to_WBC_10 + Therapy, data = filtered_data_all_log_cat_two_weeks, family = binomial)
+summary(model)
+plot(model)
+
+
+# Проверка эффекта пересечения
+#glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles * Therapy, 
+#    family = binomial, data = filtered_data_all_log_cat_two_weeks)
+
+
+exp(0.05324*10)
+
+```
+
+
+## Интерпретация модели
+
+### Коэффициенты, их SE, ДИ, тесты
+
+```{r}
+tbl_regression(model, exponentiate = TRUE)
+```
+
+## Форест-плот 
+
+```{r, fig.width=10}
+forest_model(model)
+
+# Чтобы в `broom::tidy` вывести ДИ Вальда:
+
+#dplyr::bind_cols(
+#    broom::tidy(model, exponentiate = TRUE, conf.int = FALSE),
+#    broom::confint_tidy(model, func = stats::confint.default)
+#  )
+```
+
+## Диагностика модели 
+
+```{r}
+# Специфичность и селективность модели
+
+#library(pROC)
+#roc_curve <- roc(four_months_OR ~ predict(model, type = "response"), 
+#                 data = model$model)
+#plot(roc_curve, main = "ROC-кривая")
+#auc(roc_curve)
+
+# Мультиколлинеарность
+# Если GVIF>5 мультиколлинеарность есть, если меньше - нет или слабая 
+car::vif(model)
+
+# Выбросы
+resid_panel(model, plots = c("lev", "cookd"))
+
+
+
+```

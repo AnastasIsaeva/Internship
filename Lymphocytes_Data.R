@@ -54,3 +54,38 @@ mutated_data <- mutated_data_all %>%
   select(ID, Sex, Age, Degree, ATG_Start_Date, OR, OR_Date, CR, CR_Date, four_months_OR, four_months_CR, Therapy) %>%
   distinct(ID, .keep_all = TRUE)
 
+
+# Исключаем выбросы(ошибки), заменяем 0 в WBC и NEU
+
+filtered_data_all <- mutated_data_all %>%
+  group_by(ID) %>%
+  filter(
+    # Для визита "1 day" оставляем строки, где разница ≤ 5 дней
+    !(Visit == "1 day" & 
+        !is.na(ATG_Start_Date - Date) & 
+        abs(as.numeric(difftime(Date, ATG_Start_Date, units = "days"))) > 5),
+    
+    # Для визита "1 week" проверяем разницу с "1 day"
+    !(Visit == "1 week" & 
+        !is.na(Date - Date[match("1 day", Visit)]) & 
+        as.numeric(difftime(Date, Date[match("1 day", Visit)], units = "days")) >= 15),
+    
+    # Для визита "2 week" проверяем разницу с "1 day"
+    !(Visit == "2 week" & 
+        !is.na(Date - Date[match("1 day", Visit)]) & 
+        as.numeric(difftime(Date, Date[match("1 day", Visit)], units = "days")) >= 23),
+    
+    # Исключаем строки с NA в WBC или NEU
+    !is.na(WBC),
+    !is.na(NEU)
+  ) %>%
+  ungroup() %>%
+  # Заменяем 0 в WBC и NEU на половину минимального положительного значения
+  mutate(
+    min_WBC = min(WBC[WBC > 0], na.rm = TRUE)/2,
+    min_NEU = min(NEU[NEU > 0], na.rm = TRUE)/2,
+    WBC = ifelse(WBC == 0, min_WBC, WBC),
+    NEU = ifelse(NEU == 0, min_NEU, NEU)
+  ) %>%
+  select(-min_WBC, -min_NEU)  # Удаляем вспомогательные столбцы
+

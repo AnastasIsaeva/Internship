@@ -1,0 +1,307 @@
+---
+title: "OR_CR"
+author: "Anastasia Isaeva"
+date: "2025-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(gtsummary)
+library(GGally)
+
+# Логистическая регрессия
+
+library(car)
+library(broom)
+library(broom.helpers)
+library(forestmodel)
+library(ggResidpanel)
+
+source("Lymphocytes_Data.R")
+
+```
+
+## Функции
+
+1) my_summary_table - для создания статистическиз таблиц 
+2) summary_plot - для создания графиков % ответчиков на терапию
+
+```{r}
+
+# для создания статистическиз таблиц
+my_summary_table <- function(data, cols, group, strata = NULL) {
+  if (missing(strata) || is.null(strata)) {
+    data %>%
+      select(all_of(cols), all_of(group)) %>%
+      tbl_summary(by = all_of(group)) %>% 
+      add_p() %>%
+      bold_labels()
+  } else {
+    data %>%
+      select(all_of(cols), all_of(group), all_of(strata)) %>%
+      tbl_strata(
+        strata = all_of(strata),
+        .tbl_fun = ~ .x %>% 
+          tbl_summary(by = all_of(group), missing = "no") %>% 
+          add_p(), 
+        .header = "**{strata}**, N = {n}"
+      )
+  }
+}
+
+# для создания графиков % ответчиков на терапию
+summary_plot <- function(data, group, filter_var = NULL, category = NULL, 
+                         x, y, fill, title) {
+  
+
+  if (!is.null(filter_var)) {
+    data <- data %>% filter(.data[[filter_var]] == category)
+  }
+  
+
+  data_summary <- data %>%
+    group_by(across(all_of({{group}}))) %>%
+    summarise(
+      Percent = mean(.data[[y]] == 1, na.rm = TRUE) * 100,
+      .groups = "drop"
+    )
+  
+
+  ggplot(data_summary, aes(x = .data[[x]], y = Percent, fill = .data[[fill]])) +
+    geom_col(position = position_dodge(preserve = "single")) +
+    geom_text(
+      aes(label = paste0(round(Percent), "%")),
+      position = position_dodge(width = 0.9),
+      vjust = -0.5,
+      size = 3
+    ) +
+    labs(title = title) +
+    theme_classic()
+}
+
+
+
+```
+
+## Расчет статистики хи2 для частичного и полного ответов без учета лимфоцитов
+
+### Все пациенты
+
+
+```{r}
+
+mutated_data %>% 
+  my_summary_table(
+  cols = c("four_months_OR", "four_months_CR"),
+  group = "Therapy"
+  )
+
+```
+
+### С разделением на степени тяжести
+
+```{r}
+
+mutated_data %>% 
+  my_summary_table(
+    cols = c("Degree", "Therapy","four_months_OR", "four_months_CR"),
+    group = "Therapy",
+    strata = "Degree"
+  )
+
+```
+
+## Хи2 тест и таблицы сопряженности
+
+### Данные в длинном формате
+
+```{r}
+
+long_data <- mutated_data %>% 
+  subset(select = c(ID, Degree, 
+         Therapy, 
+         four_months_OR, four_months_CR)) %>% 
+  pivot_longer(!c(ID, Degree, Therapy)) %>% 
+  mutate(Response = as.factor(name)) %>% 
+  rename(Type = value) %>% 
+  select(-c(name))
+  
+head(long_data)
+
+
+```
+
+### Хи2 для всех пациентов
+
+#### OR
+```{r}
+
+# Таблица сопряженности
+
+contingency_table_OR_all <- long_data %>% 
+  filter(Response == "four_months_OR") %>% 
+  with(table(Therapy, Type)) 
+
+contingency_table_OR_all
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_all, correct = FALSE)
+
+```
+
+#### CR
+
+```{r}
+# Таблица сопряженности
+
+contingency_table_CR_all <- long_data %>% 
+  filter(Response == "four_months_CR") %>% 
+  with(table(Therapy, Type)) 
+
+contingency_table_CR_all
+
+# Хи2 тест
+
+chisq.test(contingency_table_CR_all, correct = FALSE)
+
+```
+
+### Хи2 для пациентов по степени тяжести
+
+#### OR: Severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_OR_Severe <- long_data %>% 
+  filter(Response == "four_months_OR",
+         Degree == "Severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_OR_Severe
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_Severe, correct = FALSE)
+
+```
+
+#### CR: Severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_CR_Severe <- long_data %>% 
+  filter(Response == "four_months_CR",
+         Degree == "Severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_CR_Severe
+
+# Хи2 тест
+
+chisq.test(contingency_table_CR_Severe, correct = FALSE)
+
+```
+
+#### OR: Very severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_OR_VerySevere <- long_data %>% 
+  filter(Response == "four_months_OR",
+         Degree == "Very severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_OR_VerySevere
+
+# Хи2 тест
+
+chisq.test(contingency_table_OR_VerySevere, correct = FALSE)
+
+```
+
+#### CR: Very severe
+
+```{r}
+
+# таблица сопряженности
+
+contingency_table_CR_VerySevere <- long_data %>% 
+  filter(Response == "four_months_CR",
+         Degree == "Very severe") %>% 
+  with(table(Therapy, Type))  
+
+contingency_table_CR_VerySevere
+
+# Хи2 тест 
+
+chisq.test(contingency_table_CR_VerySevere, correct = FALSE)
+
+# Точный тест Фишера 
+
+fisher.test(contingency_table_CR_VerySevere)
+
+
+```
+
+## График соотношения ответчиков без разделения на степень тяжести заболевания
+
+```{r}
+
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
+    x = "Therapy", 
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
+    title = "All patients"
+  )
+
+```
+
+## График соотношения ответчиков с разделением на степень тяжести заболевания
+
+```{r}
+
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
+    x = "Therapy", 
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
+    title = "Severe anemia",
+    filter_var = "Degree",
+    category = "Severe"
+  )
+
+
+```
+
+## График соотношения ответчиков с разделением на степень тяжести заболевания
+
+```{r}
+
+long_data %>% 
+  summary_plot(
+    group = c("Therapy", "Response"), # Передаем как вектор строк
+    x = "Therapy", 
+    y = "Type", # Здесь должна быть бинарная переменная (0/1)
+    fill = "Response",
+    title = "Very severe anemia",
+    filter_var = "Degree",
+    category = "Very severe"
+  )
+
+```
+
