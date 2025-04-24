@@ -36,11 +36,15 @@ source("Lymphocytes_Data.R")
 ```{r}
 
 # Смотрим исключенные по условиям строки
-excluded_data <- anti_join(mutated_data_all, filtered_data_all)
+excluded_data <- anti_join(mutated_data_all, filtered_data_all) %>% # сюда войдут и "правильные" данные где WBC или NEU = 0, тк в filtered data у нас эти 0 заменяются на мин/2
+filter(
+    (WBC != 0 & NEU != 0) |  # Оба не равны 0
+    is.na(WBC) | is.na(NEU)   # ИЛИ хотя бы один из них — NA
+  )
 
 # Смотрим на разницу времени
 excluded_data %>% 
-  transmute(time = difftime(Date, ATG_Start_Date), Visit, ID)
+  transmute(time = difftime(Date, ATG_Start_Date, units = "days"), Visit, ID, WBC, NEU)
 
 
 ```

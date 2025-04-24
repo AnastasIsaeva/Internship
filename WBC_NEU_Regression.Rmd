@@ -249,10 +249,17 @@ filtered_data_all_log_max_cat <- filtered_data_all_log %>%
 model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
 
+model0 <- glm(four_months_OR ~  Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
+model1 <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
+anova(model0, model1 )
+
 #Проверка линейности
 
 model <- glm(four_months_OR ~ Percent_mean_category + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
+
+filtered_data_all_log_mean_cat %>% 
+  count(Percent_mean_category)
 
 ```
 
@@ -267,6 +274,7 @@ summary(model)
 
 model <- glm(four_months_OR ~ Percent_mean_category + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
+
 
 ```
 
