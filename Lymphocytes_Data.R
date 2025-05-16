@@ -43,8 +43,7 @@ mutated_data_all <- original_data_all %>%
   ) %>% 
   mutate(
     four_months_OR = as.factor(four_months_OR),
-    four_months_CR = as.factor(four_months_CR),
-    Percent_NEU_to_WBC = round(NEU/WBC*100, 2))
+    four_months_CR = as.factor(four_months_CR))
 
 # Выберем данные без лейкоцитов
 mutated_data <- mutated_data_all %>%
@@ -80,7 +79,8 @@ filtered_data_all <- mutated_data_all %>%
   # Заменяем 0 в WBC и NEU на половину минимального положительного значения
   mutate(
     WBC = ifelse(WBC == 0, min(WBC[WBC > 0], na.rm = TRUE)/2, WBC),
-    NEU = ifelse(NEU == 0, min(NEU[NEU > 0], na.rm = TRUE)/2, NEU)
+    NEU = ifelse(NEU == 0, min(NEU[NEU > 0], na.rm = TRUE)/2, NEU),
+    Percent_NEU_to_WBC = NEU / WBC * 100
   )
 
 filtered_data_all %>%
