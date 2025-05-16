@@ -96,22 +96,19 @@ filtered_data_all_log_mean_cat <- filtered_data_all_log %>%
   filter(Visit != "Screening") %>%
   group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %>%
   summarise(
-    WBC_mean = mean(WBC),
-    NEU_mean = mean(NEU),
+    log10WBC_mean = mean(log10WBC),
+    log10NEU_mean = mean(log10NEU),
     Percent_NEU_to_WBC_mean = mean(Percent_NEU_to_WBC),
     .groups = "drop"
   ) %>%
   mutate(
-    log10WBC_mean = log10(WBC_mean),
-    log10NEU_mean = log10(NEU_mean),
-    log10Percent_NEU_to_WBC_mean = log10(Percent_NEU_to_WBC_mean),
     Percent_mean_category = cut(Percent_NEU_to_WBC_mean,
       breaks = c(0, 20, 40, 60, 80, 100),
       labels = c("1-20%", "20-40%", "40-60%", "60-80%", "80-100%"),
       include.lowest = TRUE
     )
   ) %>%
-  mutate(across(c(log10WBC_mean, log10NEU_mean, log10Percent_NEU_to_WBC_mean),
+  mutate(across(c(log10WBC_mean, log10NEU_mean, Percent_NEU_to_WBC_mean),
     ~ split_by_quantiles(.x, n_categories = 3),
     .names = "{col}_quantiles"
   ))
@@ -149,21 +146,12 @@ filtered_data_all_log_max_cat <- filtered_data_all_log %>%
 ## По категориям среднего значения 
 
 ```{r}
-model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
+model <- glm(four_months_OR ~ Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
 
 model0 <- glm(four_months_OR ~  Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
-model1 <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
-anova(model0, model1 )
-
-#Проверка линейности
-
-model <- glm(four_months_OR ~ Percent_mean_category + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
-summary(model)
-
-filtered_data_all_log_mean_cat %>% 
-  count(Percent_mean_category)
-
+model1 <- glm(four_months_OR ~ Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
+anova(model0, model1)
 ```
 
 ## Без разделения на категории среднего значения
@@ -200,7 +188,7 @@ summary(model)
 
 ```{r}
 
-model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_max + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
+model <- glm(four_months_OR ~ Percent_NEU_to_WBC_max + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
 
 #Проверка линейности
