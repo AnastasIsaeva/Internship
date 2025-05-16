@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FAL
 library(tidyverse)
 library(readxl)
 library(dplyr)
+library(assertr)
 library(gtsummary)
 library(GGally)
 

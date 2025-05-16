@@ -1,6 +1,6 @@
 # Скачаем данные
 original_data_all <-read_excel("АА.xlsx", sheet = 1) %>% 
-  left_join(read_excel("АА.xlsx", sheet = 2))
+  left_join(read_excel("АА.xlsx", sheet = 2), join_by(ID))
 
 
 # преобразуем данные
@@ -37,12 +37,9 @@ mutated_data_all <- original_data_all %>%
                           "1 день 1 курса АТГ" = "1 day",
                           "1 нед" = "1 week",
                           "2 нед" = "2 week"),
-    Date = case_when(
-      Дата == "Нет данных" ~ NA,
-      TRUE ~ as.POSIXct(as.numeric(Дата) * 86400, origin = "1899-12-30", tz = "UTC")
-    ),
-    WBC = as.numeric(`Лейкоциты (WBC), 10^9/л`),
-    NEU = as.numeric(`Нейтрофилы (NEU), 10^9/л`)
+    Date = as.POSIXct(as.numeric(na_if(Дата, "Нет данных")) * 86400, origin = "1899-12-30", tz = "UTC"),
+    WBC = as.numeric(na_if(`Лейкоциты (WBC), 10^9/л`, "Нет данных")),
+    NEU = as.numeric(na_if(`Нейтрофилы (NEU), 10^9/л`, "Не делали"))
   ) %>% 
   mutate(
     four_months_OR = as.factor(four_months_OR),
@@ -82,10 +79,12 @@ filtered_data_all <- mutated_data_all %>%
   ungroup() %>%
   # Заменяем 0 в WBC и NEU на половину минимального положительного значения
   mutate(
-    min_WBC = min(WBC[WBC > 0], na.rm = TRUE)/2,
-    min_NEU = min(NEU[NEU > 0], na.rm = TRUE)/2,
-    WBC = ifelse(WBC == 0, min_WBC, WBC),
-    NEU = ifelse(NEU == 0, min_NEU, NEU)
-  ) %>%
-  select(-min_WBC, -min_NEU)  # Удаляем вспомогательные столбцы
+    WBC = ifelse(WBC == 0, min(WBC[WBC > 0], na.rm = TRUE)/2, WBC),
+    NEU = ifelse(NEU == 0, min(NEU[NEU > 0], na.rm = TRUE)/2, NEU)
+  )
 
+filtered_data_all %>%
+  assert(not_na, ID, Visit) %>%
+  verify(is_uniq(ID, Visit)) %>%
+  assert(not_na, WBC, NEU) %>%
+  assert(within_bounds(0, Inf, include.lower = FALSE), WBC, NEU)

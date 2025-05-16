@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE, error = TRUE)
 library(tidyverse)
 library(readxl)
 library(dplyr)
+library(assertr)
 
 source("Lymphocytes_Data.R")
 ```
