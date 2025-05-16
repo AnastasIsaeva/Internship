@@ -93,85 +93,57 @@ summary(model)
 
 ```{r}
 filtered_data_all_log_mean_cat <- filtered_data_all_log %>%
-  group_by(ID) %>%
-  mutate(
-    WBC_mean = case_when(
-      Visit == "Screening" ~ WBC,
-      TRUE ~ mean(WBC[Visit != "Screening"], na.rm = TRUE)
-    ),
-    NEU_mean = case_when(
-      Visit == "Screening" ~ NEU,
-      TRUE ~ mean(NEU[Visit != "Screening"], na.rm = TRUE)
-    ),
-    Percent_NEU_to_WBC_mean = case_when(
-      Visit == "Screening" ~ round(NEU/WBC * 100, 2),
-      TRUE ~ round(mean(NEU[Visit != "Screening"], na.rm = TRUE) / 
-                   mean(WBC[Visit != "Screening"], na.rm = TRUE) * 100, 2)
-    )
-  ) %>% 
+  filter(Visit != "Screening") %>%
+  group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %>%
+  summarise(
+    WBC_mean = mean(WBC),
+    NEU_mean = mean(NEU),
+    Percent_NEU_to_WBC_mean = mean(Percent_NEU_to_WBC),
+    .groups = "drop"
+  ) %>%
   mutate(
     log10WBC_mean = log10(WBC_mean),
     log10NEU_mean = log10(NEU_mean),
     log10Percent_NEU_to_WBC_mean = log10(Percent_NEU_to_WBC_mean),
-    
     Percent_mean_category = cut(Percent_NEU_to_WBC_mean,
-                          breaks = c(0, 20, 40, 60, 80, 100),
-                          labels = c("1-20%", "20-40%", "40-60%", "60-80%", "80-100%"),
-                          include.lowest = TRUE)
-  ) %>% 
-  ungroup() %>% 
-  filter(Visit == "2 week") %>%
-  select(ID, Sex, Age, Degree, Therapy, four_months_OR, 
-         four_months_CR, WBC_mean, NEU_mean, Percent_NEU_to_WBC_mean, 
-         log10WBC_mean, log10NEU_mean, log10Percent_NEU_to_WBC_mean,
-         Percent_mean_category) %>% 
+      breaks = c(0, 20, 40, 60, 80, 100),
+      labels = c("1-20%", "20-40%", "40-60%", "60-80%", "80-100%"),
+      include.lowest = TRUE
+    )
+  ) %>%
   mutate(across(c(log10WBC_mean, log10NEU_mean, log10Percent_NEU_to_WBC_mean),
-                ~ split_by_quantiles(.x, n_categories = 3), 
-                .names = "{col}_quantiles"))
-  
-
+    ~ split_by_quantiles(.x, n_categories = 3),
+    .names = "{col}_quantiles"
+  ))
 ```
 
 ### Объединяем визиты (1 day, 1 week, 2 week) по максимуму и категоризиуем WBC, NEU, Percent по квантилям (предварительно логарифмируя)
 
 ```{r}
 filtered_data_all_log_max_cat <- filtered_data_all_log %>%
-  group_by(ID) %>%
+  filter(Visit != "Screening") %>%
+  group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %>%
   mutate(
-    WBC_max = case_when(
-      Visit == "Screening" ~ WBC,
-      TRUE ~ max(WBC[Visit != "Screening"], na.rm = TRUE)
-    ),
-    NEU_max = case_when(
-      Visit == "Screening" ~ NEU,
-      TRUE ~ max(NEU[Visit != "Screening"], na.rm = TRUE)
-    ),
-    Percent_NEU_to_WBC_max = case_when(
-      Visit == "Screening" ~ round(NEU/WBC * 100, 2),
-      TRUE ~ round(max(NEU[Visit != "Screening"], na.rm = TRUE) / 
-                   max(WBC[Visit != "Screening"], na.rm = TRUE) * 100, 2)
-    )
-  ) %>% 
+    WBC_max = max(WBC),
+    NEU_max = max(NEU),
+    Percent_NEU_to_WBC_max = max(Percent_NEU_to_WBC),
+    .groups = "drop"
+  ) %>%
   mutate(
     log10WBC_max = log10(WBC_max),
     log10NEU_max = log10(NEU_max),
     log10Percent_NEU_to_WBC_max = log10(Percent_NEU_to_WBC_max),
     Percent_max_category = cut(Percent_NEU_to_WBC_max,
-                             breaks = c(0, 20, 40, 60, 80, 100),
-                             labels = c("1-20%", "20-40%", "40-60%", "60-80%", "80-100%"),
-                             include.lowest = TRUE)
-  ) %>% 
-  ungroup() %>% 
-  filter(Visit == "2 week") %>%
-  select(ID, Sex, Age, Degree, Therapy, four_months_OR, 
-         four_months_CR, WBC_max, NEU_max, Percent_NEU_to_WBC_max, 
-         log10WBC_max, log10NEU_max, log10Percent_NEU_to_WBC_max,
-         Percent_max_category) %>% 
+      breaks = c(0, 20, 40, 60, 80, 100),
+      labels = c("1-20%", "20-40%", "40-60%", "60-80%", "80-100%"),
+      include.lowest = TRUE
+    )
+  ) %>%
+  ungroup() %>%
   mutate(across(c(log10WBC_max, log10NEU_max, log10Percent_NEU_to_WBC_max),
-                ~ split_by_quantiles(.x, n_categories = 3), 
-                .names = "{col}_quantiles"))
-
-
+    ~ split_by_quantiles(.x, n_categories = 3),
+    .names = "{col}_quantiles"
+  ))
 ```
 
 ## По категориям среднего значения 

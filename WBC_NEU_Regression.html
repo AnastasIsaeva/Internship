@@ -445,81 +445,57 @@ summary(model)</code></pre>
 категоризиуем WBC, NEU, Percent по квантилям (предварительно
 логарифмируя)</h3>
 <pre class="r"><code>filtered_data_all_log_mean_cat &lt;- filtered_data_all_log %&gt;%
-  group_by(ID) %&gt;%
-  mutate(
-    WBC_mean = case_when(
-      Visit == &quot;Screening&quot; ~ WBC,
-      TRUE ~ mean(WBC[Visit != &quot;Screening&quot;], na.rm = TRUE)
-    ),
-    NEU_mean = case_when(
-      Visit == &quot;Screening&quot; ~ NEU,
-      TRUE ~ mean(NEU[Visit != &quot;Screening&quot;], na.rm = TRUE)
-    ),
-    Percent_NEU_to_WBC_mean = case_when(
-      Visit == &quot;Screening&quot; ~ round(NEU/WBC * 100, 2),
-      TRUE ~ round(mean(NEU[Visit != &quot;Screening&quot;], na.rm = TRUE) / 
-                   mean(WBC[Visit != &quot;Screening&quot;], na.rm = TRUE) * 100, 2)
-    )
-  ) %&gt;% 
+  filter(Visit != &quot;Screening&quot;) %&gt;%
+  group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %&gt;%
+  summarise(
+    WBC_mean = mean(WBC),
+    NEU_mean = mean(NEU),
+    Percent_NEU_to_WBC_mean = mean(Percent_NEU_to_WBC),
+    .groups = &quot;drop&quot;
+  ) %&gt;%
   mutate(
     log10WBC_mean = log10(WBC_mean),
     log10NEU_mean = log10(NEU_mean),
     log10Percent_NEU_to_WBC_mean = log10(Percent_NEU_to_WBC_mean),
-    
     Percent_mean_category = cut(Percent_NEU_to_WBC_mean,
-                          breaks = c(0, 20, 40, 60, 80, 100),
-                          labels = c(&quot;1-20%&quot;, &quot;20-40%&quot;, &quot;40-60%&quot;, &quot;60-80%&quot;, &quot;80-100%&quot;),
-                          include.lowest = TRUE)
-  ) %&gt;% 
-  ungroup() %&gt;% 
-  filter(Visit == &quot;2 week&quot;) %&gt;%
-  select(ID, Sex, Age, Degree, Therapy, four_months_OR, 
-         four_months_CR, WBC_mean, NEU_mean, Percent_NEU_to_WBC_mean, 
-         log10WBC_mean, log10NEU_mean, log10Percent_NEU_to_WBC_mean,
-         Percent_mean_category) %&gt;% 
+      breaks = c(0, 20, 40, 60, 80, 100),
+      labels = c(&quot;1-20%&quot;, &quot;20-40%&quot;, &quot;40-60%&quot;, &quot;60-80%&quot;, &quot;80-100%&quot;),
+      include.lowest = TRUE
+    )
+  ) %&gt;%
   mutate(across(c(log10WBC_mean, log10NEU_mean, log10Percent_NEU_to_WBC_mean),
-                ~ split_by_quantiles(.x, n_categories = 3), 
-                .names = &quot;{col}_quantiles&quot;))</code></pre>
+    ~ split_by_quantiles(.x, n_categories = 3),
+    .names = &quot;{col}_quantiles&quot;
+  ))</code></pre>
 </div>
 <div id="объединяем-визиты-1-day-1-week-2-week-по-максимуму-и-категоризиуем-wbc-neu-percent-по-квантилям-предварительно-логарифмируя" class="section level3">
 <h3>Объединяем визиты (1 day, 1 week, 2 week) по максимуму и
 категоризиуем WBC, NEU, Percent по квантилям (предварительно
 логарифмируя)</h3>
 <pre class="r"><code>filtered_data_all_log_max_cat &lt;- filtered_data_all_log %&gt;%
-  group_by(ID) %&gt;%
+  filter(Visit != &quot;Screening&quot;) %&gt;%
+  group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %&gt;%
   mutate(
-    WBC_max = case_when(
-      Visit == &quot;Screening&quot; ~ WBC,
-      TRUE ~ max(WBC[Visit != &quot;Screening&quot;], na.rm = TRUE)
-    ),
-    NEU_max = case_when(
-      Visit == &quot;Screening&quot; ~ NEU,
-      TRUE ~ max(NEU[Visit != &quot;Screening&quot;], na.rm = TRUE)
-    ),
-    Percent_NEU_to_WBC_max = case_when(
-      Visit == &quot;Screening&quot; ~ round(NEU/WBC * 100, 2),
-      TRUE ~ round(max(NEU[Visit != &quot;Screening&quot;], na.rm = TRUE) / 
-                   max(WBC[Visit != &quot;Screening&quot;], na.rm = TRUE) * 100, 2)
-    )
-  ) %&gt;% 
+    WBC_max = max(WBC),
+    NEU_max = max(NEU),
+    Percent_NEU_to_WBC_max = max(Percent_NEU_to_WBC),
+    .groups = &quot;drop&quot;
+  ) %&gt;%
   mutate(
     log10WBC_max = log10(WBC_max),
     log10NEU_max = log10(NEU_max),
     log10Percent_NEU_to_WBC_max = log10(Percent_NEU_to_WBC_max),
     Percent_max_category = cut(Percent_NEU_to_WBC_max,
-                             breaks = c(0, 20, 40, 60, 80, 100),
-                             labels = c(&quot;1-20%&quot;, &quot;20-40%&quot;, &quot;40-60%&quot;, &quot;60-80%&quot;, &quot;80-100%&quot;),
-                             include.lowest = TRUE)
-  ) %&gt;% 
-  ungroup() %&gt;% 
-  filter(Visit == &quot;2 week&quot;) %&gt;%
-  select(ID, Sex, Age, Degree, Therapy, four_months_OR, 
-         four_months_CR, WBC_max, NEU_max, Percent_NEU_to_WBC_max, 
-         log10WBC_max, log10NEU_max, log10Percent_NEU_to_WBC_max,
-         Percent_max_category) %&gt;% 
+      breaks = c(0, 20, 40, 60, 80, 100),
+      labels = c(&quot;1-20%&quot;, &quot;20-40%&quot;, &quot;40-60%&quot;, &quot;60-80%&quot;, &quot;80-100%&quot;),
+      include.lowest = TRUE
+    )
+  ) %&gt;%
+  ungroup() %&gt;%
   mutate(across(c(log10WBC_max, log10NEU_max, log10Percent_NEU_to_WBC_max),
-                ~ split_by_quantiles(.x, n_categories = 3), 
-                .names = &quot;{col}_quantiles&quot;))</code></pre>
+    ~ split_by_quantiles(.x, n_categories = 3),
+    .names = &quot;{col}_quantiles&quot;
+  ))</code></pre>
 </div>
 </div>
 <div id="по-категориям-среднего-значения" class="section level2">
@@ -533,23 +509,23 @@ summary(model)</code></pre>
 ## 
 ## Coefficients:
 ##                                              Estimate Std. Error z value
-## (Intercept)                                   -0.8705     0.5003  -1.740
-## log10Percent_NEU_to_WBC_mean_quantilesMedium   1.0079     0.5485   1.837
-## log10Percent_NEU_to_WBC_mean_quantilesHight    2.4987     0.6882   3.631
-## TherapyELTR + IST                              0.6241     0.5065   1.232
+## (Intercept)                                   -1.1854     0.4810  -2.465
+## log10Percent_NEU_to_WBC_mean_quantilesMedium   1.0249     0.5285   1.939
+## log10Percent_NEU_to_WBC_mean_quantilesHight    2.8474     0.6741   4.224
+## TherapyELTR + IST                              0.8463     0.4838   1.749
 ##                                              Pr(&gt;|z|)    
-## (Intercept)                                  0.081872 .  
-## log10Percent_NEU_to_WBC_mean_quantilesMedium 0.066138 .  
-## log10Percent_NEU_to_WBC_mean_quantilesHight  0.000283 ***
-## TherapyELTR + IST                            0.217849    
+## (Intercept)                                    0.0137 *  
+## log10Percent_NEU_to_WBC_mean_quantilesMedium   0.0525 .  
+## log10Percent_NEU_to_WBC_mean_quantilesHight   2.4e-05 ***
+## TherapyELTR + IST                              0.0802 .  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.488  on 86  degrees of freedom
-## Residual deviance:  98.705  on 83  degrees of freedom
-## AIC: 106.7
+##     Null deviance: 132.53  on 97  degrees of freedom
+## Residual deviance: 107.06  on 94  degrees of freedom
+## AIC: 115.06
 ## 
 ## Number of Fisher Scoring iterations: 4</code></pre>
 <pre class="r"><code>model0 &lt;- glm(four_months_OR ~  Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
@@ -560,8 +536,8 @@ anova(model0, model1 )</code></pre>
 ## Model 1: four_months_OR ~ Therapy
 ## Model 2: four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy
 ##   Resid. Df Resid. Dev Df Deviance  Pr(&gt;Chi)    
-## 1        85    115.265                          
-## 2        83     98.705  2    16.56 0.0002535 ***
+## 1        96     131.01                          
+## 2        94     107.06  2   23.946 6.314e-06 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
 <pre class="r"><code>#Проверка линейности
@@ -574,33 +550,31 @@ summary(model)</code></pre>
 ##     family = binomial, data = filtered_data_all_log_mean_cat)
 ## 
 ## Coefficients:
-##                               Estimate Std. Error z value Pr(&gt;|z|)  
-## (Intercept)                    -0.3172     0.3985  -0.796   0.4260  
-## Percent_mean_category20-40%     0.7490     0.5740   1.305   0.1919  
-## Percent_mean_category40-60%     1.5242     0.7348   2.074   0.0380 *
-## Percent_mean_category60-80%     2.3527     1.1018   2.135   0.0327 *
-## Percent_mean_category80-100%   15.8833  1455.3976   0.011   0.9913  
-## TherapyELTR + IST               0.3475     0.4956   0.701   0.4832  
+##                             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)                  -0.8197     0.3903  -2.100 0.035693 *  
+## Percent_mean_category20-40%   1.8419     0.5495   3.352 0.000803 ***
+## Percent_mean_category40-60%   2.3893     0.8209   2.911 0.003607 ** 
+## Percent_mean_category60-80%   1.9183     1.2189   1.574 0.115521    
+## TherapyELTR + IST             0.6359     0.4747   1.340 0.180376    
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.49  on 86  degrees of freedom
-## Residual deviance: 103.91  on 81  degrees of freedom
-## AIC: 115.91
+##     Null deviance: 132.53  on 97  degrees of freedom
+## Residual deviance: 110.43  on 93  degrees of freedom
+## AIC: 120.43
 ## 
-## Number of Fisher Scoring iterations: 14</code></pre>
+## Number of Fisher Scoring iterations: 4</code></pre>
 <pre class="r"><code>filtered_data_all_log_mean_cat %&gt;% 
   count(Percent_mean_category)</code></pre>
-<pre><code>## # A tibble: 5 × 2
+<pre><code>## # A tibble: 4 × 2
 ##   Percent_mean_category     n
 ##   &lt;fct&gt;                 &lt;int&gt;
-## 1 1-20%                    41
-## 2 20-40%                   21
-## 3 40-60%                   14
-## 4 60-80%                   10
-## 5 80-100%                   1</code></pre>
+## 1 1-20%                    50
+## 2 20-40%                   29
+## 3 40-60%                   15
+## 4 60-80%                    4</code></pre>
 </div>
 <div id="без-разделения-на-категории-среднего-значения" class="section level2">
 <h2>Без разделения на категории среднего значения</h2>
@@ -613,17 +587,17 @@ summary(model)</code></pre>
 ## 
 ## Coefficients:
 ##                         Estimate Std. Error z value Pr(&gt;|z|)    
-## (Intercept)             -0.85726    0.46988  -1.824 0.068088 .  
-## Percent_NEU_to_WBC_mean  0.04726    0.01364   3.464 0.000533 ***
-## TherapyELTR + IST        0.53627    0.49492   1.084 0.278568    
+## (Intercept)             -1.27644    0.46531  -2.743 0.006084 ** 
+## Percent_NEU_to_WBC_mean  0.06013    0.01596   3.768 0.000164 ***
+## TherapyELTR + IST        0.84874    0.46666   1.819 0.068950 .  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.488  on 86  degrees of freedom
-## Residual deviance:  99.076  on 84  degrees of freedom
-## AIC: 105.08
+##     Null deviance: 132.53  on 97  degrees of freedom
+## Residual deviance: 111.89  on 95  degrees of freedom
+## AIC: 117.89
 ## 
 ## Number of Fisher Scoring iterations: 4</code></pre>
 <pre class="r"><code>#Проверка линейности
@@ -636,23 +610,22 @@ summary(model)</code></pre>
 ##     family = binomial, data = filtered_data_all_log_mean_cat)
 ## 
 ## Coefficients:
-##                               Estimate Std. Error z value Pr(&gt;|z|)  
-## (Intercept)                    -0.3172     0.3985  -0.796   0.4260  
-## Percent_mean_category20-40%     0.7490     0.5740   1.305   0.1919  
-## Percent_mean_category40-60%     1.5242     0.7348   2.074   0.0380 *
-## Percent_mean_category60-80%     2.3527     1.1018   2.135   0.0327 *
-## Percent_mean_category80-100%   15.8833  1455.3976   0.011   0.9913  
-## TherapyELTR + IST               0.3475     0.4956   0.701   0.4832  
+##                             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)                  -0.8197     0.3903  -2.100 0.035693 *  
+## Percent_mean_category20-40%   1.8419     0.5495   3.352 0.000803 ***
+## Percent_mean_category40-60%   2.3893     0.8209   2.911 0.003607 ** 
+## Percent_mean_category60-80%   1.9183     1.2189   1.574 0.115521    
+## TherapyELTR + IST             0.6359     0.4747   1.340 0.180376    
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.49  on 86  degrees of freedom
-## Residual deviance: 103.91  on 81  degrees of freedom
-## AIC: 115.91
+##     Null deviance: 132.53  on 97  degrees of freedom
+## Residual deviance: 110.43  on 93  degrees of freedom
+## AIC: 120.43
 ## 
-## Number of Fisher Scoring iterations: 14</code></pre>
+## Number of Fisher Scoring iterations: 4</code></pre>
 </div>
 <div id="по-категориям-максимального-значения" class="section level2">
 <h2>По категориям максимального значения</h2>
@@ -665,23 +638,23 @@ summary(model)</code></pre>
 ## 
 ## Coefficients:
 ##                                             Estimate Std. Error z value
-## (Intercept)                                  -0.8705     0.5003  -1.740
-## log10Percent_NEU_to_WBC_max_quantilesMedium   1.0079     0.5485   1.837
-## log10Percent_NEU_to_WBC_max_quantilesHight    2.4987     0.6882   3.631
-## TherapyELTR + IST                             0.6241     0.5065   1.232
+## (Intercept)                                  -0.8363     0.2778  -3.011
+## log10Percent_NEU_to_WBC_max_quantilesMedium   0.7521     0.3094   2.431
+## log10Percent_NEU_to_WBC_max_quantilesHight    2.4618     0.3895   6.321
+## TherapyELTR + IST                             0.6561     0.2823   2.325
 ##                                             Pr(&gt;|z|)    
-## (Intercept)                                 0.081872 .  
-## log10Percent_NEU_to_WBC_max_quantilesMedium 0.066138 .  
-## log10Percent_NEU_to_WBC_max_quantilesHight  0.000283 ***
-## TherapyELTR + IST                           0.217849    
+## (Intercept)                                  0.00261 ** 
+## log10Percent_NEU_to_WBC_max_quantilesMedium  0.01505 *  
+## log10Percent_NEU_to_WBC_max_quantilesHight   2.6e-10 ***
+## TherapyELTR + IST                            0.02009 *  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.488  on 86  degrees of freedom
-## Residual deviance:  98.705  on 83  degrees of freedom
-## AIC: 106.7
+##     Null deviance: 360.74  on 268  degrees of freedom
+## Residual deviance: 307.44  on 265  degrees of freedom
+## AIC: 315.44
 ## 
 ## Number of Fisher Scoring iterations: 4</code></pre>
 <pre class="r"><code>#Проверка линейности
@@ -694,21 +667,21 @@ summary(model)</code></pre>
 ##     family = binomial, data = filtered_data_all_log_max_cat)
 ## 
 ## Coefficients:
-##                              Estimate Std. Error z value Pr(&gt;|z|)  
-## (Intercept)                   -0.4200     0.4247  -0.989   0.3227  
-## Percent_max_category20-40%     0.5424     0.6362   0.853   0.3939  
-## Percent_max_category40-60%     1.0932     0.6844   1.597   0.1102  
-## Percent_max_category60-80%     1.8204     0.7471   2.437   0.0148 *
-## Percent_max_category80-100%   17.7327  1606.1045   0.011   0.9912  
-## TherapyELTR + IST              0.3895     0.5058   0.770   0.4413  
+##                             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)                  -0.7418     0.2772  -2.676  0.00745 ** 
+## Percent_max_category20-40%    0.4271     0.3614   1.182  0.23725    
+## Percent_max_category40-60%    1.4855     0.4008   3.706  0.00021 ***
+## Percent_max_category60-80%    1.9704     0.4007   4.917 8.78e-07 ***
+## Percent_max_category80-100%  18.0360   855.7089   0.021  0.98318    
+## TherapyELTR + IST             0.4989     0.2879   1.733  0.08314 .  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.49  on 86  degrees of freedom
-## Residual deviance: 101.25  on 81  degrees of freedom
-## AIC: 113.25
+##     Null deviance: 360.74  on 268  degrees of freedom
+## Residual deviance: 301.22  on 263  degrees of freedom
+## AIC: 313.22
 ## 
 ## Number of Fisher Scoring iterations: 16</code></pre>
 </div>
@@ -723,17 +696,17 @@ summary(model)</code></pre>
 ## 
 ## Coefficients:
 ##                             Estimate Std. Error z value Pr(&gt;|z|)    
-## (Intercept)                  -1.5058     0.6342  -2.374 0.017586 *  
-## log10Percent_NEU_to_WBC_max   1.4218     0.3984   3.569 0.000359 ***
-## TherapyELTR + IST             0.5895     0.5019   1.175 0.240110    
+## (Intercept)                  -2.0850     0.4373  -4.768 1.86e-06 ***
+## log10Percent_NEU_to_WBC_max   1.5997     0.2690   5.946 2.75e-09 ***
+## TherapyELTR + IST             0.7602     0.2834   2.683   0.0073 ** 
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.488  on 86  degrees of freedom
-## Residual deviance:  99.541  on 84  degrees of freedom
-## AIC: 105.54
+##     Null deviance: 360.74  on 268  degrees of freedom
+## Residual deviance: 314.94  on 266  degrees of freedom
+## AIC: 320.94
 ## 
 ## Number of Fisher Scoring iterations: 4</code></pre>
 <pre class="r"><code>#Проверка линейности
@@ -746,21 +719,21 @@ summary(model)</code></pre>
 ##     family = binomial, data = filtered_data_all_log_max_cat)
 ## 
 ## Coefficients:
-##                              Estimate Std. Error z value Pr(&gt;|z|)  
-## (Intercept)                   -0.4200     0.4247  -0.989   0.3227  
-## Percent_max_category20-40%     0.5424     0.6362   0.853   0.3939  
-## Percent_max_category40-60%     1.0932     0.6844   1.597   0.1102  
-## Percent_max_category60-80%     1.8204     0.7471   2.437   0.0148 *
-## Percent_max_category80-100%   17.7327  1606.1045   0.011   0.9912  
-## TherapyELTR + IST              0.3895     0.5058   0.770   0.4413  
+##                             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)                  -0.7418     0.2772  -2.676  0.00745 ** 
+## Percent_max_category20-40%    0.4271     0.3614   1.182  0.23725    
+## Percent_max_category40-60%    1.4855     0.4008   3.706  0.00021 ***
+## Percent_max_category60-80%    1.9704     0.4007   4.917 8.78e-07 ***
+## Percent_max_category80-100%  18.0360   855.7089   0.021  0.98318    
+## TherapyELTR + IST             0.4989     0.2879   1.733  0.08314 .  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
 ## (Dispersion parameter for binomial family taken to be 1)
 ## 
-##     Null deviance: 115.49  on 86  degrees of freedom
-## Residual deviance: 101.25  on 81  degrees of freedom
-## AIC: 113.25
+##     Null deviance: 360.74  on 268  degrees of freedom
+## Residual deviance: 301.22  on 263  degrees of freedom
+## AIC: 313.22
 ## 
 ## Number of Fisher Scoring iterations: 16</code></pre>
 </div>
