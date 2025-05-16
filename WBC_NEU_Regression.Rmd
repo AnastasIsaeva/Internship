@@ -24,6 +24,10 @@ library(broom.helpers)
 library(forestmodel)
 library(ggResidpanel)
 
+# Для проверки линейности
+library(emmeans)
+
+
 source("Lymphocytes_Data.R")
 
 ```
@@ -164,6 +168,20 @@ summary(model)
 
 model <- glm(four_months_OR ~ Percent_mean_category + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
+
+emm <- emmeans(model, ~ Percent_mean_category)
+co <- contrast(emm, method = "consec")
+tidy(co, conf.int = T) %>%
+  ggplot(aes(contrast)) +
+  geom_pointrange(aes(y = estimate, ymin = conf.low, ymax = conf.high)) +
+  scale_y_continuous(lim = c(-5,5), oob = scales::oob_squish)
+
+# Не очень (разница должна быть примерно одна и та же), даже с учетом широких ДИ
+
+filtered_data_all_log_mean_cat %>%
+  group_by(Percent_mean_category) %>%
+  summarise(e = sum(four_months_OR == 1),
+            n = n())
 ```
 
 ## По категориям максимального значения
@@ -188,4 +206,18 @@ summary(model)
 
 model <- glm(four_months_OR ~ Percent_max_category + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
+
+emm <- emmeans(model, ~ Percent_max_category)
+co <- contrast(emm, method = "consec")
+tidy(co, conf.int = T) %>%
+  ggplot(aes(contrast)) +
+  geom_pointrange(aes(y = estimate, ymin = conf.low, ymax = conf.high)) +
+  scale_y_continuous(lim = c(-5,5), oob = scales::oob_squish)
+
+# Лучше
+
+filtered_data_all_log_max_cat %>%
+  group_by(Percent_max_category) %>%
+  summarise(e = sum(four_months_OR == 1),
+            n = n())
 ```
