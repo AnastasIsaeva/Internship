@@ -120,7 +120,7 @@ filtered_data_all_log_mean_cat <- filtered_data_all_log %>%
 filtered_data_all_log_max_cat <- filtered_data_all_log %>%
   filter(Visit != "Screening") %>%
   group_by(ID, Degree, Therapy, four_months_OR, four_months_CR) %>%
-  mutate(
+  summarise(
     WBC_max = max(WBC),
     NEU_max = max(NEU),
     Percent_NEU_to_WBC_max = max(Percent_NEU_to_WBC),
