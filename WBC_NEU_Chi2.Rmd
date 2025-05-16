@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE, error = TRUE)
 
 library(tidyverse)
 library(readxl)
@@ -400,74 +400,5 @@ long_filtered_data_all_log_cat %>%
     filter_var = "Visit",
     category = "2 week"
   )
-
-```
-
-
-
-
-
-```{r}
-
-filtered_data_all_log_cat_two_weeks <- filtered_data_all_log_cat %>% 
-  filter(Visit == "1 week") %>% 
-  mutate(Percent_NEU_to_WBC_10 = Percent_NEU_to_WBC/10) %>% 
-  select(four_months_OR, Percent_NEU_to_WBC_10, Therapy) 
-
-model <- glm(four_months_OR ~ Percent_NEU_to_WBC_10 + Therapy, data = filtered_data_all_log_cat_two_weeks, family = binomial)
-summary(model)
-plot(model)
-
-
-# Проверка эффекта пересечения
-#glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles * Therapy, 
-#    family = binomial, data = filtered_data_all_log_cat_two_weeks)
-
-
-exp(0.05324*10)
-
-```
-
-
-## Интерпретация модели
-
-### Коэффициенты, их SE, ДИ, тесты
-
-```{r}
-tbl_regression(model, exponentiate = TRUE)
-```
-
-## Форест-плот 
-
-```{r, fig.width=10}
-forest_model(model)
-
-# Чтобы в `broom::tidy` вывести ДИ Вальда:
-
-#dplyr::bind_cols(
-#    broom::tidy(model, exponentiate = TRUE, conf.int = FALSE),
-#    broom::confint_tidy(model, func = stats::confint.default)
-#  )
-```
-
-## Диагностика модели 
-
-```{r}
-# Специфичность и селективность модели
-
-#library(pROC)
-#roc_curve <- roc(four_months_OR ~ predict(model, type = "response"), 
-#                 data = model$model)
-#plot(roc_curve, main = "ROC-кривая")
-#auc(roc_curve)
-
-# Мультиколлинеарность
-# Если GVIF>5 мультиколлинеарность есть, если меньше - нет или слабая 
-car::vif(model)
-
-# Выбросы
-resid_panel(model, plots = c("lev", "cookd"))
-
-
 
 ```

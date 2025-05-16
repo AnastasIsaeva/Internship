@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE, error = TRUE)
 
 library(tidyverse)
 library(readxl)
@@ -30,67 +30,7 @@ source("Lymphocytes_Data.R")
 
 ## Функции
 
-1) my_summary_table - для создания статистическиз таблиц 
-2) summary_plot - для создания графиков % ответчиков на терапию
-
-```{r}
-
-# для создания статистическиз таблиц
-my_summary_table <- function(data, cols, group, strata = NULL) {
-  if (missing(strata) || is.null(strata)) {
-    data %>%
-      select(all_of(cols), all_of(group)) %>%
-      tbl_summary(by = all_of(group)) %>% 
-      add_p() %>%
-      bold_labels()
-  } else {
-    data %>%
-      select(all_of(cols), all_of(group), all_of(strata)) %>%
-      tbl_strata(
-        strata = all_of(strata),
-        .tbl_fun = ~ .x %>% 
-          tbl_summary(by = all_of(group), missing = "no") %>% 
-          add_p(), 
-        .header = "**{strata}**, N = {n}"
-      )
-  }
-}
-
-# для создания графиков % ответчиков на терапию
-summary_plot <- function(data, group, filter_var = NULL, category = NULL, 
-                         x, y, fill, title) {
-  
-
-  if (!is.null(filter_var)) {
-    data <- data %>% filter(.data[[filter_var]] == category)
-  }
-  
-
-  data_summary <- data %>%
-    group_by(across(all_of({{group}}))) %>%
-    summarise(
-      Percent = mean(.data[[y]] == 1, na.rm = TRUE) * 100,
-      .groups = "drop"
-    )
-  
-
-  ggplot(data_summary, aes(x = .data[[x]], y = Percent, fill = .data[[fill]])) +
-    geom_col(position = position_dodge(preserve = "single")) +
-    geom_text(
-      aes(label = paste0(round(Percent), "%")),
-      position = position_dodge(width = 0.9),
-      vjust = -0.5,
-      size = 3
-    ) +
-    labs(title = title) +
-    theme_classic()
-}
-
-
-
-```
-
-### Логарифмирование
+## Логарифмирование 
 
 ```{r}
 filtered_data_all_log <- filtered_data_all %>%
@@ -101,11 +41,11 @@ filtered_data_all_log <- filtered_data_all %>%
   ) 
 ```
 
+## Разделение
 
 ### Разделение по медиане и квантилям распределения на 3 категории (0.25 и 0.75)
 
 ```{r}
-
 filtered_data_all_log_cat <- filtered_data_all_log %>%
   group_by(Visit) %>%
   mutate(across(
@@ -134,33 +74,24 @@ filtered_data_all_log_cat <- filtered_data_all_log_cat %>%
                 ~ split_by_quantiles(.x, n_categories = 3), 
                 .names = "{col}_quantiles")) %>%
   ungroup()
-
 ```
-
-
 
 # Логистическая регрессия 
 
 ## По категориям бейзлайна 2 недели
 
 ```{r}
-
-
-
 filtered_data_all_log_cat_two_weeks <- filtered_data_all_log_cat %>% 
   filter(Visit == "2 week") %>% 
   select(four_months_OR, log10Percent_NEU_to_WBC_quantiles, Therapy) 
 
 model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_quantiles + Therapy, data = filtered_data_all_log_cat_two_weeks, family = binomial)
 summary(model)
-
-
 ```
 
 ### Объединяем визиты (1 day, 1 week, 2 week) по среднему и категоризиуем WBC, NEU, Percent по квантилям (предварительно логарифмируя)
 
 ```{r}
-
 filtered_data_all_log_mean_cat <- filtered_data_all_log %>%
   group_by(ID) %>%
   mutate(
@@ -204,7 +135,6 @@ filtered_data_all_log_mean_cat <- filtered_data_all_log %>%
 ### Объединяем визиты (1 day, 1 week, 2 week) по максимуму и категоризиуем WBC, NEU, Percent по квантилям (предварительно логарифмируя)
 
 ```{r}
-
 filtered_data_all_log_max_cat <- filtered_data_all_log %>%
   group_by(ID) %>%
   mutate(
@@ -247,7 +177,6 @@ filtered_data_all_log_max_cat <- filtered_data_all_log %>%
 ## По категориям среднего значения 
 
 ```{r}
-
 model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_mean_quantiles + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
 
