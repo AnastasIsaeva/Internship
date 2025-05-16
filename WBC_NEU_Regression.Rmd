@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE, error = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE, error = TRUE, comment = "")
 
 library(tidyverse)
 library(readxl)
@@ -157,43 +157,35 @@ anova(model0, model1)
 ## Без разделения на категории среднего значения
 
 ```{r}
-
 model <- glm(four_months_OR ~ Percent_NEU_to_WBC_mean + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
 
-#Проверка линейности
+# Проверка линейности
 
 model <- glm(four_months_OR ~ Percent_mean_category + Therapy, data = filtered_data_all_log_mean_cat, family = binomial)
 summary(model)
-
-
 ```
-
 
 ## По категориям максимального значения
 
 ```{r}
-
 model <- glm(four_months_OR ~ log10Percent_NEU_to_WBC_max_quantiles + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
 
-#Проверка линейности
+# Проверка линейности
 
 model <- glm(four_months_OR ~ Percent_max_category + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
-
 ```
 
 ## Без разделения на категории максимального значения
 
 ```{r}
-
 model <- glm(four_months_OR ~ Percent_NEU_to_WBC_max + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
 
-#Проверка линейности
+# Проверка линейности
 
 model <- glm(four_months_OR ~ Percent_max_category + Therapy, data = filtered_data_all_log_max_cat, family = binomial)
 summary(model)
-
 ```
