@@ -35,28 +35,28 @@ source("Lymphocytes_Data.R")
 
 ```{r}
 excluded_data <- anti_join(mutated_data_all, filtered_data_all, join_by(ID, Date))
-
-# Смотрим на разницу времени
-excluded_data %>% 
-  transmute(time = difftime(Date, ATG_Start_Date, units = "days"), Visit, ID, WBC, NEU)
-
-
 ```
 
 ## Репортируем все исключенные строки (мы исключили только строки а не пациента целиком). 
 
 
-```{r}
+```{r, results='hide'}
+excluded_data_report <- excluded_data %>%
+  transmute(ID, ATG_Start_Date, Date, time = difftime(Date, ATG_Start_Date, units = "days"), Visit, WBC, NEU)
 
-excluded_data_report <- excluded_data %>% 
-  select(ID, Sex, Age, Degree, Visit, Date, WBC, NEU, ATG_Start_Date, OR, OR_Date, CR, CR_Date)
-
-excluded_data_report_all <- mutated_data_all %>% 
-  filter(ID %in% c(5, 7, 16, 29, 33, 46, 51)) %>% 
-  select(ID, Sex, Age, Degree, Visit, Date, WBC, NEU, ATG_Start_Date, OR, OR_Date, CR, CR_Date)
-
-#saveRDS(excluded_data_report, "Excluded_srtings")
-#saveRDS(excluded_data_report_all, "Patients")
+gt::gt(excluded_data_report, groupname_col = "ID") %>%
+  gt::fmt_datetime(format = "%d.%m.%Y") %>%
+  gt::sub_missing()
 ```
 
+```{r}
+excluded_data_report_all <- mutated_data_all %>% 
+  semi_join(excluded_data, join_by(ID)) %>%
+  left_join(distinct(excluded_data, ID, Date, excluded = 1), join_by(ID, Date)) %>%
+  transmute(ID, ATG_Start_Date, Date, time = difftime(Date, ATG_Start_Date, units = "days"), Visit, WBC, NEU, excluded)
 
+gt::gt(excluded_data_report_all, groupname_col = "ID") %>%
+  gt::tab_style(gt::cell_fill(), gt::cells_body(rows = excluded == 1)) %>%
+  gt::fmt_datetime(format = "%d.%m.%Y") %>%
+  gt::sub_missing()
+```
